@@ -146,9 +146,9 @@ it may be necessary to add shims to support the middle segments of the arch.
 
 ### Flat base edges
 
-Adding the holes for magnets was a huge PITA in python. As a simplification, the base surface that the magnets are embedded into is flat. That's correct for the North-South edges, but the East-West edges of the terrain actually curve, creating an odd break between the base and the heights. This can be seem in the Denali preset (Since Denali is far north the curvature of lines of longitude is more pronounced).
+The method for adding the magnet holes an ugly hack. As a simplification, the base surface that the magnets are embedded into is flat. That's correct for the North-South edges, but the East-West edges of the terrain actually curve, creating an odd break between the base and the heights. This can be seem in the Denali preset (Since Denali is far north the curvature of lines of longitude is more pronounced).
 
-In practice, this mismatch between base and heights doesn't seem to be a problem, but the current solution is inelegant. 
+In practice, this mismatch between base and heights doesn't seem to be a problem, but the current solution is inelegant. Should be rewritten using proper computational geometry.
 
 
 ### Shorelines
