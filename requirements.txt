@@ -1,0 +1,5 @@
+numpy
+scipy
+numpy-stl
+xarray
+py3dep
