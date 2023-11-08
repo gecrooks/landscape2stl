@@ -7,9 +7,12 @@
 Gavin E. Crooks (2023)
 
 
-![alt text](images/yosemite_r2d2.jpeg "Title")
-![alt text](images/landscape_magnets.jpeg"Title")
-![alt text](images/yosemite.jpeg "Title")
+![Yosemite](images/yosemite_r2d2.jpeg)
+Yosemite valley and environs, scale about 1" to 1 mile, overall size 24"x21". R2D2 for scale.
+
+![Magnets](images/landscape_magnets.jpeg)
+Yosemite was printed in 9 segments, held together by magnets installed along the base.
+
 
 
 The python script landscape2stl.py generates large scale terrain models as STL files suitable for 3D printing. I have
