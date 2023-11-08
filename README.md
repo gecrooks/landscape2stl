@@ -7,6 +7,11 @@
 Gavin E. Crooks (2023)
 
 
+![alt text](images/yosemite_r2d2.jpeg "Title")
+![alt text](images/landscape_magnets.jpeg"Title")
+![alt text](images/yosemite.jpeg "Title")
+
+
 The python script landscape2stl.py generates large scale terrain models as STL files suitable for 3D printing. I have
 incorporated a number of innovations, namely a high resolution data source, novel map projection, and base alignment magnets.
 
