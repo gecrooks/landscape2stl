@@ -7,6 +7,14 @@
 Gavin E. Crooks (2023)
 
 
+![Yosemite](images/yosemite_r2d2.jpeg)
+Yosemite valley and environs, scale about 1" to 1 mile, overall size 24"x21". R2D2 for scale.
+
+![Magnets](images/landscape_magnets.jpeg)
+Yosemite was printed in 9 segments, held together by magnets installed along the base.
+
+
+
 The python script landscape2stl.py generates large scale terrain models as STL files suitable for 3D printing. I have
 incorporated a number of innovations, namely a high resolution data source, novel map projection, and base alignment magnets.
 
@@ -33,9 +41,7 @@ When you print a 2D map of a portion of the world you have to choose a map proje
 There are many possible projections, and no projection is ideal since they must all inevitable warp the spherical reality to the flat plane.
 Every projection introduces distortions.
 
-While I was pondering the problem of which projection would be best for my terrain models, a flash of inspiration hit me: I don't need a projection at all! With a 3D printer I can print in 3D! 
-
-Instead each terrain segment created by landscape2stl.py is in fact a gently curved wedge of the Earth. The sides slope inwards slightly, and the east-west lines of longitude are curved. At large scales this effect is subtle, but not insignificant even at a a scale of 1 miles: 1 inch.
+While I was pondering the problem of which projection would be best for terrain models, a flash of inspiration hit me: I don't need a projection at all! With a 3D printer I can print in 3D! Each terrain segment created by landscape2stl.py is a gently curved wedge of the Earth. The sides slope inwards slightly, and the east-west lines of longitude are curved. At large scales this effect is subtle, but not insignificant even at a scale of 1 miles: 1 inch.
 
 
 ## Base alignment magnets
@@ -146,7 +152,7 @@ it may be necessary to add shims to support the middle segments of the arch.
 
 ### Flat base edges
 
-The method for adding the magnet holes an ugly hack. As a simplification, the base surface that the magnets are embedded into is flat. That's correct for the North-South edges, but the East-West edges of the terrain actually curve, creating an odd break between the base and the heights. This can be seem in the Denali preset (Since Denali is far north the curvature of lines of longitude is more pronounced).
+The method for adding the magnet holes is an ugly hack. As a simplification, the surface that the magnets are embedded into is flat. That's correct for the North-South edges, but the East-West edges of the terrain actually curve, creating an odd break between the base and the heights. This can be seem in the Denali preset (Since Denali is far north the curvature of lines of longitude is more pronounced).
 
 In practice, this mismatch between base and heights doesn't seem to be a problem, but the current solution is inelegant. Should be rewritten using proper computational geometry.
 
