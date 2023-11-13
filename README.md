@@ -30,16 +30,14 @@ then create STL terrain models.
 ## Data Source: 3DEP 1/3rd arc-second
 
 The elevation data is taken from the USGS 3D Elevation Program (3DEP) 1/3rd arc-second dataset (approximately 10m resolution). This
-is a high quality, high resolution dataset. I've experimented with scales up to 1:24000, and the models look great. (If the 
-dataset resolution isn't fine enough the model starts looking like Minecraft)
+is a high quality, high resolution dataset. I've experimented printing with scales up to 1:24000, and the models look great. (If the 
+dataset resolution isn't fine enough the model starts looking like Minecraft.)
 
 The downside is that this dataset is only available for the contiguous 48 states, Hawaii, and some parts of Alaska.
 
 ## There is no projection
 
-When you print a 2D map of a portion of the world you have to choose a map projection, since the world is spherical and the map is flat.
-There are many possible projections, and no projection is ideal since they must all inevitable warp the spherical reality to the flat plane.
-Every projection introduces distortions.
+When you print a 2D map of a portion of the world you have to choose a map projection, since the world is spherical and the map is flat. There are many possible projections, and no projection is ideal since they must all inevitable distort the spherical reality to the flat plane.
 
 While I was pondering the problem of which projection would be best for terrain models, a flash of inspiration hit me: I don't need a projection at all! With a 3D printer I can print in 3D! Each terrain segment created by landscape2stl.py is a gently curved wedge of the Earth. The sides slope inwards slightly, and the east-west lines of longitude are curved. At large scales this effect is subtle, but not insignificant even at a scale of 1 miles: 1 inch.
 
@@ -108,8 +106,8 @@ to disable magnets.
 ## Slicing and Printing
 
 * Printer: Ender 3 pro
-* nozzle: 0.4mm
-* layer height: 0.12mm
+* Nozzle: 0.4mm
+* Layer height: 0.12mm
 * Infill: 5% 
 * Filament: eSUN PLA PRO (PLA+), Cool White (print at 210c, 70c plate temperature)
 
@@ -129,6 +127,7 @@ the steps I took to ensure success.
 
 After printing, use a deburring tool to clean up bottom edges, lightly sand the sides, and press-fit the magnets. Make sure the magnet orientations are consistent. I use the same orientation on North and East edges, and flip the orientation for the south and west edges. Make sure to use the same magnet orientations for each additional slab. 
 
+To fit the magnets, take a stack of magnets, place over the magnet hole (in the correct orientation), and give the top of the stack a sharp tap with a mallet. If the magnet won't stay in its socket, add a small spot of superglue. 
 
 
 ## Known Issues
@@ -140,34 +139,31 @@ This is an experimental prototype package of beta code for my own amusement. The
 
 ### Limited data coverage
 
-The 3DEP 1/3 arc second data set only covers the USA (And not even all of Alaska). Ideally we would fall back to other
-lower resolution datasets for the rest of the world.
+The 3DEP 1/3 arc second data set only covers the USA (And not even all of Alaska). Ideally we would fall back to other lower resolution datasets for the rest of the world.
 
 
 ### Model arcs
 
-Large enough models arc upwards due to the curvature of Earth's surface. The magnets are not strong enough to hold the arc themselves, so 
-it may be necessary to add shims to support the middle segments of the arch.
+Large enough models arc upwards due to the curvature of Earth's surface. The magnets are not strong enough to hold the arc themselves, so it may be necessary to add shims to support the middle segments of the arch.
 
 
 ### Flat base edges
 
 The method for adding the magnet holes is an ugly hack. As a simplification, the surface that the magnets are embedded into is flat. That's correct for the North-South edges, but the East-West edges of the terrain actually curve, creating an odd break between the base and the heights. This can be seem in the Denali preset (Since Denali is far north the curvature of lines of longitude is more pronounced).
 
-In practice, this mismatch between base and heights doesn't seem to be a problem, but the current solution is inelegant. Should be rewritten using proper computational geometry.
+In practice, this mismatch between base and heights doesn't seem to be a problem, but the current solution is inelegant and should be rewritten using proper computational geometry.
 
 
 ### Shorelines
 
 Shorelines are generally not visible in the models.
 
-(A fix would be to reduce the height of the ocean by some number of meters. Unfortunately the 3DEP dataset does not make it clear where land ends and the sea begins. You might think everything above sea level is land, but that produces bad looking coast lines. Setting sea level to 1m  oddly produces better results, but not ideal. And also some areas of California, notable Death Valley, are below sea level.)
+(A possible fix would be to reduce the height of the ocean by some number of meters. Unfortunately the 3DEP dataset does not make it clear where land ends and the sea begins. You might think everything above sea level is land, but that produces bad looking coast lines. Setting sea level to 1m  oddly produces better results, but not ideal. And also some areas of California, notable Death Valley, are below sea level.)
 
 
 ### Circular Contours
 
-At the center of each terrain segment up is vertical, but at the edges of the segment up is slightly outwards because each segment is curved. This means the contour lines created by the successive layers of the 3D print are not actually horizontal. This is visible if you create a model of a very flat area, such as a patch of ocean. You get circular contour lines centered at the center of the segment. However, this effect
-isn't noticeable for any interestingly rugged piece of terrain. 
+At the center of each terrain segment up is vertical, but at the edges of the segment up is slightly outwards because each segment is curved. This means the contour lines created by the successive layers of the 3D print are not actually horizontal. This is visible if you create a model of a very flat area, such as a patch of ocean. You get circular contour lines centered at the center of the segment. However, this effect isn't noticeable for any interestingly rugged piece of terrain. 
 
 
 
