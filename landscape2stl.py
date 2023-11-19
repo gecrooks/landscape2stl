@@ -19,22 +19,19 @@
 # latitude is north-south
 # longitude is west-east (long way around)
 
-import py3dep
-import numpy as np
-import xarray as xr
-import argparse, sys
-
-import numpy as np
-from math import pi
+import argparse
 import math
-
-from stl import mesh  # from package numpy-stl
 import os
+import sys
+from math import pi
 from os import path
-
-
-from typing_extensions import TypeAlias
 from typing import Any
+
+import numpy as np
+import py3dep
+import xarray as xr
+from stl import mesh  # from package numpy-stl
+from typing_extensions import TypeAlias
 
 # Many units and coordinate systems. Use various TypeAlias in desperate effort to keep everything straight
 LLA: TypeAlias = Any  # latitude, longitude, altitude (in meters) coordinates
