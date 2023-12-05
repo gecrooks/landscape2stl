@@ -57,30 +57,33 @@ I've also added smaller holes along the sides for alignment pins (Use short leng
 ```
 > python -m landscape2stl.py --help
 
-usage: landscape2stl.py [-h]
-                        [--preset REGION]
-                        [--scale SCALE] [--exaggeration EXAGGERATION] [--magnets MAGNETS]
-                        [N W S E ...]
+usage: landscape2stl.py [-h] 
+                        [--preset {half_dome,west_of_half_dome,whitney,yosemite_west,yosemite_valley,clouds_rest,grand_canyon,shasta,shasta_west,joshua_tree,owens_valley,denali}] 
+                        [--scale SCALE]
+                        [--exaggeration EXAGGERATION] 
+                        [--magnets MAGNETS] 
+                        [--name NAME] [-v]
+                        [S W N E ...]
 
 Create landscape STLs
 
 positional arguments:
-  N W S E               Latitude/longitude coordinates for slab (Order North edge, west edge, south edge, east edge)
+  S W N E               Latitude/longitude coordinates for slab (Order south edge, west edge, north edge, east edge)
 
 options:
   -h, --help            show this help message and exit
-  --preset REGION
+  --preset {half_dome,west_of_half_dome,whitney,yosemite_west,yosemite_valley,clouds_rest,grand_canyon,shasta,shasta_west,joshua_tree,owens_valley,denali}
   --scale SCALE         Map scale
   --exaggeration EXAGGERATION
                         Vertical exaggeration
   --magnets MAGNETS     Magnet spacing (in degrees)
-  --name FILENAME 
-
+  --name NAME           Filename for model
+  -v, --verbose
 ```
 
-###  N W S E               
+###  S W N E               
 
-Latitude/longitude coordinates for slab (Order North edge, west edge, south edge, east edge)
+Latitude/longitude coordinates for slab (Order south edge, west edge, north edge, east edge)
 
 ### Preset
 A collection of pre-selected regions that override explicit selection of coordinates.  These regions
@@ -100,8 +103,7 @@ Low scale models require vertical exaggeration else the landscape looks flat and
 
 
 ### Magnet spacing
-The spacing between magnets in degrees. If you use a standard scale a reasonable magnet spacing will be chosen for you. Set to 0.0 
-to disable magnets.
+The spacing between magnets in degrees. If you use a standard scale a reasonable magnet spacing will be chosen for you.
 
 
 
@@ -131,7 +133,6 @@ After printing, use a deburring tool to clean up bottom edges, lightly sand the 
 
 To fit the magnets, take a stack of magnets, place over the magnet hole (in the correct orientation), and give the top of the stack a sharp tap with a mallet. If the magnet won't stay in its socket, add a small spot of superglue. 
 
-##
 
 ## Known Issues
 

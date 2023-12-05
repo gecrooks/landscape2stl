@@ -23,6 +23,7 @@ import math
 import os
 import sys
 from dataclasses import dataclass
+from typing import Optional
 
 import ezdxf
 import numpy as np
@@ -31,6 +32,7 @@ import xarray as xr
 from ezdxf.addons.meshex import stl_dumpb
 from ezdxf.addons.pycsg import CSG
 from ezdxf.render.forms import cylinder_2p
+from numpy.typing import ArrayLike
 from typing_extensions import TypeAlias
 
 # Many units and coordinate systems. Use TypeAlias's in desperate effort to
@@ -45,24 +47,25 @@ LLA: TypeAlias = tuple[
     Degrees, Degrees, Meters
 ]  # latitude, longitude, altitude (in meters) coordinates
 ENU: TypeAlias = tuple[MM, MM, MM]  # East, North, Up model coordinates (millimeters)
-CORNERS: TypeAlias = tuple[
+BBox: TypeAlias = tuple[
     Degrees, Degrees, Degrees, Degrees
-]  # north, west, south, east
+]  # Geographic bounding box: south, west, north, east
+
 
 # Various presets featuring varied terrains for testing and development.
-presets = {
-    "half_dome": [(37.76, -119.57, 37.72, -119.52), 24_000],  # 37.75°N 119.53
-    "west_of_half_dome": [(37.76, -119.62, 37.72, -119.57), 24_000],
-    "whitney": [(36.60, -118.33, 36.56, -118.28), 24_000],  # High point test
-    "yosemite_west": [(37.80, -119.80, 37.70, -119.65), 62_500],
-    "yosemite_valley": [(37.80, -119.65, 37.70, -119.50), 62_500],
-    "clouds_rest": [(37.80, -119.50, 37.70, -119.35), 62_500],
-    "grand_canyon": [(36.2000, -112.2000, 36.0000, -111.950), 125_000],
-    "shasta": [(41.5000, -122.3500, 41.3000, -122.0500), 125_000],
-    "shasta_west": [(41.5000, -122.6500, 41.3000, -122.3500), 125_000],
-    "joshua_tree": [(34.0000, -116.0000, 33.8, -115.75), 125_000],
-    "owens_valley": [(38, -120, 36.5, -118), 1_000_000],
-    "denali": [(63.5000, -152.0000, 62.5000, -150.0000), 1_000_000],
+presets: dict[str, tuple[BBox, int]] = {
+    "half_dome": ((37.72, -119.57, 37.76, -119.52), 24_000),  # 37.75°N 119.53°W
+    "west_of_half_dome": ((37.72, -119.62, 37.76, -119.57), 24_000),
+    "whitney": ((36.56, -118.33, 36.60, -118.28), 24_000),  # High point test
+    "yosemite_west": ((37.70, -119.80, 37.80, -119.65), 62_500),
+    "yosemite_valley": ((37.70, -119.65, 37.80, -119.50), 62_500),
+    "clouds_rest": ((37.70, -119.50, 37.80, -119.35), 62_500),
+    "grand_canyon": ((36.0000, -112.2000, 36.2000, -111.9500), 125_000),
+    "shasta": ((41.3000, -122.3500, 41.5000, -122.0500), 125_000),
+    "shasta_west": ((41.3000, -122.6500, 41.5000, -122.3500), 125_000),
+    "joshua_tree": ((33.8, -116.0000, 34.0000, -115.75), 125_000),
+    "owens_valley": ((36.5, -120, 38, -118), 1_000_000),
+    "denali": ((62.5000, -152.0000, 63.5000, -150.0000), 1_000_000),
 }
 
 
@@ -82,13 +85,10 @@ default_cache = "cache"
 @dataclass
 class STLParameters:
     scale: float = 62_500.0
-    resolution: Meters = 10
+    resolution: int = 10  # meters
     pitch: MM = 0.20  # Half the minimum feature size
 
     min_altitude: Meters = -100.0  # Lowest point in US is -86 m
-    max_altitude: Meters = (
-        10000.0  # Highest point US is 6,190 m  (Everest is 8,848.9 m)
-    )
 
     drop_sea_level: bool = True
     sea_level: Meters = 1.0  # 0.01
@@ -99,7 +99,7 @@ class STLParameters:
     base_height: MM = 10.0
 
     magnet_holes: bool = True
-    magnet_spacing: Degrees = None
+    magnet_spacing: Degrees = 0.0
     magnet_diameter: MM = 6.00
     magnet_padding: MM = 0.025
     magnet_depth: MM = 2.00
@@ -129,7 +129,7 @@ class STLParameters:
             1_000_000: 0.50,  # ???
         }
 
-        if self.magnet_spacing is None:
+        if not self.magnet_spacing:
             if self.scale in default_magnet_spacing:
                 self.magnet_spacing = default_magnet_spacing[self.scale]
 
@@ -141,10 +141,10 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Create landscape STLs")
     parser.add_argument(
         "coordinates",
-        metavar="N W S E",
+        metavar="S W N E",
         type=float,
         nargs="*",
-        help="Latitude/longitude coordinates for slab (Order North edge, west edge, south edge, east edge)",
+        help="Latitude/longitude coordinates for slab (Order south edge, west edge, north edge, east edge)",
     )
 
     parser.add_argument("--preset", dest="preset", choices=presets.keys())
@@ -202,17 +202,17 @@ def main() -> int:
 
 def create_stl(
     params: STLParameters,
-    coords,
-    name=None,
-    verbose=False,
+    boundary: BBox,
+    name: Optional[str] = None,
+    verbose: bool = False,
 ) -> None:
     # Locate origin
-    north, west, south, east = coords
-    origin = locate_origin(coords)
+    south, west, north, east = boundary
+    origin = locate_origin(boundary)
 
     # Calculate steps...
     north_west_enu = lla_to_model((north, west, 0.0), origin, params)
-    south_east_enu = lla_to_model([south, east, 0.0], origin, params)
+    south_east_enu = lla_to_model((south, east, 0.0), origin, params)
 
     extent_ns = north_west_enu[0] - south_east_enu[0]
     extent_we = north_west_enu[1] - south_east_enu[1]
@@ -221,7 +221,7 @@ def create_stl(
     we_steps = int(round(extent_we / params.pitch))
     steps = max(ns_steps, we_steps)
 
-    elevation = download_elevation(coords, steps, params.resolution, verbose)
+    elevation = download_elevation(boundary, steps, params.resolution, verbose)
 
     if verbose:
         print("Building terrain...")
@@ -229,17 +229,18 @@ def create_stl(
     surface = elevation_to_surface(elevation, origin, params)
 
     # Add a little bit of noise. Hack for smooth seascapes
+    # FIXME: Do I still need this hack?
     surface += 0.001 * np.random.uniform(size=surface.shape)
 
     if verbose:
         print("Triangulating surface...")
 
-    surface_mesh = triangulate_surface(surface, coords, origin, params)
+    surface_mesh = triangulate_surface(surface, boundary, origin, params)
 
     if verbose:
         print("Triangulating base...")
 
-    base_mesh = triangulate_base(coords, origin, params, steps)
+    base_mesh = triangulate_base(boundary, origin, params, steps)
 
     model = surface_mesh
     model.add_mesh(mesh=base_mesh)
@@ -256,7 +257,7 @@ def create_stl(
         print("Creating STL...")
 
     if name is None:
-        filename = "{:.2f}_{:.2f}_{:.2f}_{:.2f}.stl".format(*coords)
+        filename = "{:.2f}_{:.2f}_{:.2f}_{:.2f}.stl".format(*boundary)
     else:
         filename = name + ".stl"
 
@@ -272,39 +273,47 @@ def create_stl(
 # end create_stl
 
 
-def locate_origin(coords) -> LLA:
+def locate_origin(boundary: BBox) -> LLA:
     # Locate a point in the middle of the landscape tile which defines the
     # local up direction. Model distances are defined relative to this point
 
-    origin = (coords[0] + coords[2]) / 2, (coords[1] + coords[3]) / 2, -100000
+    south, west, north, east = boundary
+
+    origin = (south + north) / 2, (east + west) / 2, -100000.0
 
     # adjust origin so that 4 corners are equal height
-    north, west, south, east = coords
+
     alt = -100
-    west_north = lla_to_ecef([north, west, alt])
-    east_north = lla_to_ecef([north, east, alt])
-    east_south = lla_to_ecef([south, east, alt])
-    west_south = lla_to_ecef([south, west, alt])
-    new_origin_ecef = [
+    west_north = lla_to_ecef((north, west, alt))
+    east_north = lla_to_ecef((north, east, alt))
+    east_south = lla_to_ecef((south, east, alt))
+    west_south = lla_to_ecef((south, west, alt))
+    new_origin_ecef = (
         (west_north[0] + east_south[0] + west_south[0] + east_north[0]) / 4,
         (west_north[1] + east_south[1] + west_south[1] + east_north[1]) / 4,
         (west_north[2] + east_south[2] + west_south[2] + east_north[2]) / 4,
-    ]
+    )
     new_origin = ecef_to_lla(new_origin_ecef)
 
     # Honestly, dunno why this works.
-    origin = origin[0] * 2 - new_origin[0], new_origin[1], 0.0
+    origin = (origin[0] * 2 - new_origin[0], new_origin[1], 0.0)
 
     return origin
 
 
-def download_elevation(coords, steps, resolution, verbose=False):
-    north, west, south, east = coords
+def download_elevation(
+    boundary: BBox,
+    steps: int,
+    resolution: int,
+    verbose: bool = False,
+) -> xr.Dataset | xr.DataArray:
+    elevation: xr.Dataset | xr.DataArray
+    south, west, north, east = boundary
 
     xcoords = np.linspace(west, east, steps)
     ycoords = np.linspace(south, north, steps)
 
-    filename = "{}_{:.2f}_{:.2f}_{:.2f}_{:.2f}.nc".format(steps, *coords)
+    filename = "{}_{:.2f}_{:.2f}_{:.2f}_{:.2f}.nc".format(steps, *boundary)
 
     if not os.path.exists(default_cache):
         os.mkdir(default_cache)
@@ -315,7 +324,7 @@ def download_elevation(coords, steps, resolution, verbose=False):
         if verbose:
             print("Downloading elevation data... ", end="", flush=True)
         elevation = py3dep.elevation_bygrid(
-            xcoords, ycoords, crs="EPSG:4326", resolution=10
+            tuple(xcoords), tuple(ycoords), crs="EPSG:4326", resolution=resolution
         )  # or 30
         elevation.to_netcdf(fname)
         if verbose:
@@ -330,20 +339,22 @@ def download_elevation(coords, steps, resolution, verbose=False):
     return elevation
 
 
-def elevation_to_surface(elevation, origin, params) -> np.ndarray:
+def elevation_to_surface(
+    elevation: xr.Dataset | xr.DataArray, origin: LLA, params: STLParameters
+) -> np.ndarray:
     ycoords = np.asarray(elevation.coords["y"])
     xcoords = np.asarray(elevation.coords["x"])
     steps = len(ycoords)
-    elevation = np.asarray(elevation.to_array()).reshape((steps, steps)).T
+    elevation_array = np.asarray(elevation.to_array()).reshape((steps, steps)).T
 
     # Missing date will be nan
-    elevation = np.nan_to_num(elevation, nan=0.0)
+    elevation_array = np.nan_to_num(elevation_array, nan=0.0)
 
     if params.drop_sea_level:
         dropped_sea_level = (
             -(params.scale * params.sea_level_drop / 1000) / params.exaggeration
         )
-        elevation[elevation <= params.sea_level] = dropped_sea_level
+        elevation_array[elevation_array <= params.sea_level] = dropped_sea_level
 
     surface = np.zeros(shape=(steps, steps, 3))
 
@@ -351,16 +362,21 @@ def elevation_to_surface(elevation, origin, params) -> np.ndarray:
         for y in range(steps):
             lat = ycoords[y]
             lon = xcoords[x]
-            alt = elevation[x, y]
+            alt = elevation_array[x, y]
             surface[x, y] = lla_to_model((lat, lon, alt), origin, params)
 
     return surface
 
 
-def triangulate_surface(surface, coords, origin, params):
+def triangulate_surface(
+    surface: np.ndarray,
+    boundary: BBox,
+    origin: LLA,
+    params: STLParameters,
+) -> ezdxf.render.MeshBuilder:
     model = ezdxf.render.MeshBuilder()
     steps = surface.shape[0]
-    north, west, south, east = coords
+    south, west, north, east = boundary
 
     # Top surface
     for x in range(steps - 1):
@@ -378,7 +394,7 @@ def triangulate_surface(surface, coords, origin, params):
                     [surface[x + 1, y], surface[x + 1, y + 1], surface[x, y + 1]]
                 )
 
-    bot_corners = corners_to_model(coords, params.min_altitude, origin, params)
+    bot_corners = corners_to_model(boundary, params.min_altitude, origin, params)
     west_north_bot, west_south_bot, east_south_bot, east_north_bot = bot_corners
 
     bot_height = west_north_bot[2]
@@ -462,42 +478,14 @@ def triangulate_surface(surface, coords, origin, params):
     return model
 
 
-def triangulate_wedge(coords, origin, params):
-    """
-    Construct a cuboid, whose top corners (in model coordinates) are at
-    the maximum altitude, and the bottom are at minimum altitude .
-    The side edges are located at the given lat/lon coordinates. North-south
-    sides follow the lines of latitude, but the east-west sides are formed by
-    great circles rather than the lines of longitude.
-    """
-
+def triangulate_base(
+    boundary: BBox,
+    origin: LLA,
+    params: STLParameters,
+    steps: int,
+) -> ezdxf.render.MeshBuilder:
     model = ezdxf.render.MeshBuilder()
-
-    top_corners = corners_to_model(coords, params.max_altitude, origin, params)
-    west_north_top, west_south_top, east_south_top, east_north_top = top_corners
-
-    bot_corners = corners_to_model(coords, params.min_altitude, origin, params)
-    west_north_bot, west_south_bot, east_south_bot, east_north_bot = bot_corners
-
-    model.add_face([east_south_bot, east_south_top, west_south_bot])
-    model.add_face([west_south_top, west_south_bot, east_south_top])
-
-    model.add_face([east_south_top, east_south_bot, east_north_bot])
-    model.add_face([east_north_bot, east_north_top, east_south_top])
-
-    # North
-    model.add_face([east_north_bot, east_north_top, west_north_bot][::-1])
-    model.add_face([west_north_top, west_north_bot, east_north_top][::-1])
-
-    model.add_face([west_south_bot, west_south_top, west_north_bot])
-    model.add_face([west_north_top, west_north_bot, west_south_top])
-
-    return model
-
-
-def triangulate_base(coords, origin, params, steps):
-    model = ezdxf.render.MeshBuilder()
-    north, west, south, east = coords
+    south, west, north, east = boundary
 
     base_alt = params.min_altitude - (
         params.base_height * params.scale / (1000 * params.exaggeration)
@@ -505,13 +493,13 @@ def triangulate_base(coords, origin, params, steps):
 
     magnets_alt = (base_alt + params.min_altitude) / 2
 
-    top_corners = corners_to_model(coords, params.min_altitude, origin, params)
+    top_corners = corners_to_model(boundary, params.min_altitude, origin, params)
     west_north_top, west_south_top, east_south_top, east_north_top = top_corners
 
-    bot_corners = corners_to_model(coords, base_alt, origin, params)
+    bot_corners = corners_to_model(boundary, base_alt, origin, params)
     west_north_bot, west_south_bot, east_south_bot, east_north_bot = bot_corners
 
-    mag_corners = corners_to_model(coords, magnets_alt, origin, params)
+    mag_corners = corners_to_model(boundary, magnets_alt, origin, params)
     west_north_mag, west_south_mag, east_south_mag, east_north_mag = mag_corners
 
     bot = (
@@ -555,7 +543,6 @@ def triangulate_base(coords, origin, params, steps):
     model.add_face([west_north_top, west_north_bot, west_south_top])
 
     # bot of base
-
     for i in range(steps - 1):
         model.add_face([north_bot[i], south_bot[i], north_bot[i + 1]][::-1])
         model.add_face([north_bot[i + 1], south_bot[i], south_bot[i + 1]][::-1])
@@ -585,142 +572,83 @@ def triangulate_base(coords, origin, params, steps):
 
     model_csg = CSG(model)
 
+    magnets = params.magnet_spacing
+    long_steps = 1 + round((east - west) / magnets) * 2
+    lat_steps = 1 + round((north - south) / magnets) * 2
+    longs = np.linspace(west, east, long_steps)
+    lats = np.linspace(south, north, lat_steps)
+
+    south_normal = triangle_normal(east_south_bot, east_south_top, west_south_bot)
+    north_normal = triangle_normal(east_north_bot, west_north_bot, east_north_top)
+    west_normal = triangle_normal(west_south_bot, west_south_top, west_north_top)
+    east_normal = triangle_normal(east_south_top, east_south_bot, east_north_top)
+
     if params.magnet_holes:
-        magnets = params.magnet_spacing
 
-        long_steps = 1 + round((east - west) / magnets) * 2
-        lat_steps = 1 + round((north - south) / magnets) * 2
-
-        magnet_radius = (params.magnet_diameter) / 2 + params.magnet_padding
-        magnet_depth = params.magnet_depth + params.magnet_recess
-        magnet_sides = params.magnet_sides
+        mag_radius = (params.magnet_diameter) / 2 + params.magnet_padding
+        mag_depth = params.magnet_depth + params.magnet_recess
+        mag_sides = params.magnet_sides
 
         # south
-        face_normal = triangle_normal(east_south_bot, east_south_top, west_south_bot)
-        xx = np.linspace(west_south_mag[0], east_south_mag[0], long_steps)
-        yy = np.linspace(west_south_mag[1], east_south_mag[1], long_steps)
-        zz = np.linspace(west_south_mag[2], east_south_mag[2], long_steps)
-
         for i in range(1, long_steps, 2):
-            hole = make_hole(
-                magnet_sides,
-                magnet_depth,
-                magnet_radius,
-                (xx[i], yy[i], zz[i]),
-                face_normal,
-            )
+            mag_lla = (south, longs[i], magnets_alt)
+            mag_enu = lla_to_model(mag_lla, origin, params)
+            hole = make_hole(mag_sides, mag_depth, mag_radius, mag_enu, south_normal)
             model_csg = model_csg - CSG(hole)
 
         # north
-        face_normal = triangle_normal(east_north_bot, west_north_bot, east_north_top)
-
-        xx = np.linspace(west_north_mag[0], east_north_mag[0], long_steps)
-        yy = np.linspace(west_north_mag[1], east_north_mag[1], long_steps)
-        zz = np.linspace(west_north_mag[2], east_north_mag[2], long_steps)
-
         for i in range(1, long_steps, 2):
-            hole = make_hole(
-                magnet_sides,
-                magnet_depth,
-                magnet_radius,
-                (xx[i], yy[i], zz[i]),
-                face_normal,
-            )
+            mag_lla = (north, longs[i], magnets_alt)
+            mag_enu = lla_to_model(mag_lla, origin, params)
+            hole = make_hole(mag_sides, mag_depth, mag_radius, mag_enu, north_normal)
             model_csg = model_csg - CSG(hole)
 
         # west
-        face_normal = triangle_normal(west_south_bot, west_south_top, west_north_top)
-
-        xx = np.linspace(west_north_mag[0], west_south_mag[0], lat_steps)
-        yy = np.linspace(west_north_mag[1], west_south_mag[1], lat_steps)
-        zz = np.linspace(west_north_mag[2], west_south_mag[2], lat_steps)
-
         for i in range(1, lat_steps, 2):
-            hole = make_hole(
-                magnet_sides,
-                magnet_depth,
-                magnet_radius,
-                (xx[i], yy[i], zz[i]),
-                face_normal,
-            )
+            mag_lla = (lats[i], west, magnets_alt)
+            mag_enu = lla_to_model(mag_lla, origin, params)
+            hole = make_hole(mag_sides, mag_depth, mag_radius, mag_enu, west_normal)
             model_csg = model_csg - CSG(hole)
 
         # east
-        face_normal = triangle_normal(east_south_top, east_south_bot, east_north_top)
-
-        xx = np.linspace(east_north_mag[0], east_south_mag[0], lat_steps)
-        yy = np.linspace(east_north_mag[1], east_south_mag[1], lat_steps)
-        zz = np.linspace(east_north_mag[2], east_south_mag[2], lat_steps)
-
         for i in range(1, lat_steps, 2):
-            hole = make_hole(
-                magnet_sides,
-                magnet_depth,
-                magnet_radius,
-                (xx[i], yy[i], zz[i]),
-                face_normal,
-            )
+            mag_lla = (lats[i], east, magnets_alt)
+            mag_enu = lla_to_model(mag_lla, origin, params)
+            hole = make_hole(mag_sides, mag_depth, mag_radius, mag_enu, east_normal)
             model_csg = model_csg - CSG(hole)
 
     if params.pin_holes:
-        magnets = params.magnet_spacing
-
-        long_steps = 1 + round((east - west) / magnets) * 2
-        lat_steps = 1 + round((north - south) / magnets) * 2
 
         pin_length = params.pin_length
         pin_radius = (params.pin_diameter / 2) + params.pin_padding
         pin_sides = params.pin_sides
 
         # south
-        face_normal = triangle_normal(east_south_bot, east_south_top, west_south_bot)
-        xx = np.linspace(west_south_mag[0], east_south_mag[0], long_steps)
-        yy = np.linspace(west_south_mag[1], east_south_mag[1], long_steps)
-        zz = np.linspace(west_south_mag[2], east_south_mag[2], long_steps)
-
         for i in range(2, long_steps - 1, 2):
-            hole = make_hole(
-                pin_sides, pin_length, pin_radius, (xx[i], yy[i], zz[i]), face_normal
-            )
+            pin_lla = (south, longs[i], magnets_alt)
+            pin_enu = lla_to_model(pin_lla, origin, params)
+            hole = make_hole(pin_sides, pin_length, pin_radius, pin_enu, south_normal)
             model_csg = model_csg - CSG(hole)
 
         # north
-        face_normal = triangle_normal(east_north_bot, west_north_bot, east_north_top)
-
-        xx = np.linspace(west_north_mag[0], east_north_mag[0], long_steps)
-        yy = np.linspace(west_north_mag[1], east_north_mag[1], long_steps)
-        zz = np.linspace(west_north_mag[2], east_north_mag[2], long_steps)
-
         for i in range(2, long_steps - 1, 2):
-            hole = make_hole(
-                pin_sides, pin_length, pin_radius, (xx[i], yy[i], zz[i]), face_normal
-            )
+            pin_lla = (north, longs[i], magnets_alt)
+            pin_enu = lla_to_model(pin_lla, origin, params)
+            hole = make_hole(pin_sides, pin_length, pin_radius, pin_enu, north_normal)
             model_csg = model_csg - CSG(hole)
 
         # west
-        face_normal = triangle_normal(west_south_bot, west_south_top, west_north_top)
-
-        xx = np.linspace(west_north_mag[0], west_south_mag[0], lat_steps)
-        yy = np.linspace(west_north_mag[1], west_south_mag[1], lat_steps)
-        zz = np.linspace(west_north_mag[2], west_south_mag[2], lat_steps)
-
         for i in range(2, lat_steps - 1, 2):
-            hole = make_hole(
-                pin_sides, pin_length, pin_radius, (xx[i], yy[i], zz[i]), face_normal
-            )
+            pin_lla = (lats[i], west, magnets_alt)
+            pin_enu = lla_to_model(pin_lla, origin, params)
+            hole = make_hole(pin_sides, pin_length, pin_radius, pin_enu, west_normal)
             model_csg = model_csg - CSG(hole)
 
         # east
-        face_normal = triangle_normal(east_south_top, east_south_bot, east_north_top)
-
-        xx = np.linspace(east_north_mag[0], east_south_mag[0], lat_steps)
-        yy = np.linspace(east_north_mag[1], east_south_mag[1], lat_steps)
-        zz = np.linspace(east_north_mag[2], east_south_mag[2], lat_steps)
-
         for i in range(2, lat_steps - 1, 2):
-            hole = make_hole(
-                pin_sides, pin_length, pin_radius, (xx[i], yy[i], zz[i]), face_normal
-            )
+            pin_lla = (lats[i], east, magnets_alt)
+            pin_enu = lla_to_model(pin_lla, origin, params)
+            hole = make_hole(pin_sides, pin_length, pin_radius, pin_enu, east_normal)
             model_csg = model_csg - CSG(hole)
 
     if params.bolt_holes:
@@ -780,14 +708,13 @@ def triangulate_base(coords, origin, params, steps):
         model_csg = model_csg - CSG(cylinder)
 
     model = model_csg.mesh()
-
     return model
 
 
 # End triangulate base
 
 
-def triangle_normal(A, B, C):
+def triangle_normal(A: ArrayLike, B: ArrayLike, C: ArrayLike) -> np.ndarray:
     A = np.asarray(A)
     B = np.asarray(B)
     C = np.asarray(C)
@@ -905,7 +832,9 @@ def lla_to_enu(lat_lon_alt: LLA, origin_lat_lon_alt: LLA) -> ENU:
     return enu[0], enu[1], enu[2]
 
 
-def lla_to_model(lat_lon_alt: LLA, origin_lat_lon_alt: LLA, params) -> ENU:
+def lla_to_model(
+    lat_lon_alt: LLA, origin_lat_lon_alt: LLA, params: STLParameters
+) -> ENU:
     """
     Convert latitude, longitude, and altitude (LLA) coordinates
     to model ENU Cartesian coordinates in millimeters
@@ -919,16 +848,21 @@ def lla_to_model(lat_lon_alt: LLA, origin_lat_lon_alt: LLA, params) -> ENU:
     return (enu_scaled[0], enu_scaled[1], enu_scaled[2])
 
 
-def normalize(v):
+def normalize(v: np.ndarray) -> np.ndarray:
     return v / np.linalg.norm(v)
 
 
-def angle_between(v, w):
+def angle_between(v: np.ndarray, w: np.ndarray) -> np.ndarray:
     return np.arccos(np.dot(v, w) / (np.linalg.norm(v) * np.linalg.norm(w)))
 
 
-def corners_to_model(coords, alt, origin, params):
-    north, west, south, east = coords
+def corners_to_model(
+    boundary: BBox,
+    alt: Meters,
+    origin: LLA,
+    params: STLParameters,
+) -> tuple[ENU, ENU, ENU, ENU]:
+    south, west, north, east = boundary
     west_north: ENU = lla_to_model((north, west, alt), origin, params)
     east_north: ENU = lla_to_model((north, east, alt), origin, params)
     east_south: ENU = lla_to_model((south, east, alt), origin, params)

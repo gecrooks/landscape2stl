@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 
-from landscape2stl import create_stl, STLParameters
+from landscape2stl import create_stl, STLParameters, BBox
 
 
 params = STLParameters(
@@ -8,22 +8,24 @@ params = STLParameters(
     magnet_spacing=0.025,
     exaggeration=1,
     magnet_holes=True,
-    bolt_holes=False,
-    pin_holes=False,
+    bolt_holes=True,
+    pin_holes=True,
     pitch=0.2,
     )
 
-ee = -119.80
-nn = 37.70
-e_delta = 0.15
-n_delta = 0.1
+yosemite_boundary: BBox = (37.60, -119.80, 37.90, -119.35)  # south, west, north, east
+lat_delta = 0.1
+long_delta = 0.15
 
 
-# Oahu 
-for e in range(0, 5):
-    for n in range(0, 3):
-        name = f"yosemite_62500_{e}{n}"
-        north = nn + n * n_delta
-        east = ee + e * e_delta
-        print(name, north, east, north-n_delta, east+e_delta)
-        create_stl(params, (north, east, north-n_delta, east+e_delta), name=name, verbose=True)
+south, west, north, east = yosemite_boundary
+
+slab_west = west
+while slab_west < east:
+    slab_south = south
+    while slab_south < north:
+        create_stl(params, (slab_south, slab_west, slab_south+lat_delta, slab_west+long_delta),  verbose=True)
+        slab_south += lat_delta
+    slab_west += long_delta
+
+
