@@ -49,6 +49,8 @@ Since print beds are limited in size large landscapes have to be printed as a co
 Inspired by the gridfinity project, I solved the alignment problem by adding holes along the base into which you can press-fit 6mm X 2mm
 magnets. (I'm using DIYMAG brand from Amazon, which cost about 3¢ each.) Neighboring segments snap together with a satisfying click, with nigh on perfect alignment, and can be broken apart again for storage or transport. 
 
+I've also added smaller holes along the sides for alignment pins (Use short lengths of filament), and hole on the bottom corner of heat set M4 bolt insets. 
+
 
 ## CLI: landscape2stl.py
 
@@ -129,6 +131,7 @@ After printing, use a deburring tool to clean up bottom edges, lightly sand the 
 
 To fit the magnets, take a stack of magnets, place over the magnet hole (in the correct orientation), and give the top of the stack a sharp tap with a mallet. If the magnet won't stay in its socket, add a small spot of superglue. 
 
+##
 
 ## Known Issues
 
@@ -147,18 +150,9 @@ The 3DEP 1/3 arc second data set only covers the USA (And not even all of Alaska
 Large enough models arc upwards due to the curvature of Earth's surface. The magnets are not strong enough to hold the arc themselves, so it may be necessary to add shims to support the middle segments of the arch.
 
 
-### Flat base edges
-
-The method for adding the magnet holes is an ugly hack. As a simplification, the surface that the magnets are embedded into is flat. That's correct for the North-South edges, but the East-West edges of the terrain actually curve, creating an odd break between the base and the heights. This can be seem in the Denali preset (Since Denali is far north the curvature of lines of longitude is more pronounced).
-
-In practice, this mismatch between base and heights doesn't seem to be a problem, but the current solution is inelegant and should be rewritten using proper computational geometry.
-
-
 ### Shorelines
 
-Shorelines are generally not visible in the models.
-
-(A possible fix would be to reduce the height of the ocean by some number of meters. Unfortunately the 3DEP dataset does not make it clear where land ends and the sea begins. You might think everything above sea level is land, but that produces bad looking coast lines. Setting sea level to 1m  oddly produces better results, but not ideal. And also some areas of California, notable Death Valley, are below sea level.)
+We drop ocean areas by a small amount to make shorelines more visible in the models. Unfortunately the 3DEP dataset does not make it clear where land ends and the sea begins. You might think everything above sea level is land, but that produces bad looking coast lines. Setting sea level to 1m  oddly produces better results, but not ideal. And also some areas of California, notable Death Valley, are below sea level.
 
 
 ### Circular Contours

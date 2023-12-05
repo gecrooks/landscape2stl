@@ -19,106 +19,92 @@
 # Gavin E. Crooks 2023
 
 
-import math
-from math import pi
 
-import numpy as np
-from stl import mesh
+import ezdxf
+from ezdxf.render.forms import cube, cylinder_2p
+from ezdxf.addons.pycsg import CSG
+from ezdxf.addons.meshex import stl_dumps
 
-magnet_diameter = 5.95  # magnet diameter in mm (measured with calipers)
-magnet_depth = 1.65  # magnet depth in mm (measured with calipers)
-magnet_padding = 0.25
+# create new DXF document
+doc = ezdxf.new()
+msp = doc.modelspace()
 
+from landscape2stl import STLParameters
 
-diameter = magnet_diameter + magnet_padding * 2
-depth = magnet_depth + magnet_padding
-sides = 8  # Magnet hole is octagonal prism. Seems to work fine.
-
-
-def PointsInCircum(r, n=100, z=0.0):
-    return [
-        (math.cos(2 * pi / n * x) * r, math.sin(2 * pi / n * x) * r, z)
-        for x in range(0, n + 1)
-    ]
+model = ezdxf.render.MeshBuilder()
 
 
-circle = np.asarray(PointsInCircum(diameter / 2, sides, 0.0))
-
-bot_circle = np.asarray(PointsInCircum(diameter / 2, sides, -depth))
-
-center_bot = (0.0, 0.0, -depth)
-
-triangles = []
-
-hedge = 5
-
-top_square = [
-    [hedge, 0, 0],
-    [hedge, hedge, 0],
-    [0, hedge, 0],
-    [-hedge, hedge, 0],
-    [-hedge, 0, 0],
-    [-hedge, -hedge, 0],
-    [0, -hedge, 0],
-    [hedge, -hedge, 0],
-    [hedge, 0, 0],
-]
+# create same geometric primitives as MeshTransformer() objects
+cube1 = cube()
+cube1 = cube1.scale(20, 20, 10)
 
 
-for x in range(sides):
-    tri = (circle[x], circle[x + 1], bot_circle[x])
-    triangles.append(tri)
-    tri = (bot_circle[x + 1], bot_circle[x], circle[x + 1])
-    triangles.append(tri)
-    tri = (bot_circle[x], bot_circle[x + 1], center_bot)
-    triangles.append(tri)
-
-    tri = (
-        circle[x],
-        top_square[x],
-        circle[x + 1],
-    )
-    triangles.append(tri)
-    tri = (top_square[x], top_square[x + 1], circle[x + 1])
-    triangles.append(tri)
+model_csg = CSG(cube1)
 
 
-tnw = [hedge, hedge, 0]
-tne = [hedge, -hedge, 0]
-tse = [-hedge, -hedge, 0]
-tsw = [-hedge, hedge, 0]
-bnw = [hedge, hedge, -hedge]
-bne = [hedge, -hedge, -hedge]
-bse = [-hedge, -hedge, -hedge]
-bsw = [-hedge, hedge, -hedge]
+params = STLParameters()
+magnet_radius = (params.magnet_diameter)/2 + params.magnet_padding
+magnet_depth = params.magnet_depth + params.magnet_recess
+magnet_sides = params.magnet_sides
 
-# north
-triangles.append([tnw, tne, bne])
-triangles.append([bne, bnw, tnw])
-# triangles.append([tnw, tne, bne])
-
-# west
-triangles.append([tsw, tnw, bsw])
-triangles.append([bnw, bsw, tnw])
-
-# south
-triangles.append([tsw, tse, bsw])
-triangles.append([bse, bsw, tse])
-
-# east
-triangles.append([tne, tse, bse])
-triangles.append([bse, bne, tne])
+pin_length = params.pin_length
+pin_radius = (params.pin_diameter/2) + params.pin_padding
+pin_sides = params.pin_sides
 
 
-# bot
-triangles.append([bnw, bne, bse])
-triangles.append([bse, bsw, bnw])
+cylinder = cylinder_2p(
+    count=magnet_sides,
+    base_center=(0, -magnet_depth, 0),
+    top_center=(0, magnet_depth, 0),
+    radius=magnet_radius,
+)
+cylinder.translate(-5, 10, 0)
+model_csg = model_csg - CSG(cylinder)
+
+cylinder = cylinder_2p(
+    count=magnet_sides,
+    base_center=(0, -magnet_depth, 0),
+    top_center=(0, magnet_depth, 0),
+    radius=magnet_radius,
+)
+cylinder.translate(5, 10, 0)
+model_csg = model_csg - CSG(cylinder)
 
 
-triangles = np.asarray(triangles)
+cylinder = cylinder_2p(
+    count=pin_sides,
+    base_center=(0, -pin_length, 0),
+    top_center=(0, pin_length, 0),
+    radius=1,
+)
+cylinder.translate(-5,-10, 0)
+model_csg = model_csg - CSG(cylinder)
 
-data = np.zeros(triangles.shape[0], dtype=mesh.Mesh.dtype)
-data["vectors"] = triangles
-name = "magnets"
-the_mesh = mesh.Mesh(data.copy())
-the_mesh.save(name + ".stl")
+cylinder = cylinder_2p(
+    count=pin_sides,
+    base_center=(0, -pin_length, 0),
+    top_center=(0, pin_length, 0),
+    radius=1,
+)
+cylinder.translate(5, -10, 0)
+model_csg = model_csg - CSG(cylinder)
+
+
+offset = params.bolt_hole_offset
+sides = params.bolt_hole_sides
+radius = params.bolt_hole_padding + params.bolt_hole_diameter/2 
+depth = params.bolt_hole_depth
+cylinder = cylinder_2p(
+    count=sides, base_center=(0, 0, -depth), top_center=(0, 0, depth), radius=radius
+)
+cylinder.translate([0, 0, -5])
+model_csg = model_csg - CSG(cylinder)
+
+
+
+s = stl_dumps(model_csg.mesh())
+
+filename = 'magnets.stl'
+
+with open(filename, "w") as f:
+        f.write(s)
