@@ -13,9 +13,9 @@ params = STLParameters(
     pitch=0.2,
     )
 
-yosemite_boundary: BBox = (37.60, -119.80, 37.90, -119.35)  # south, west, north, east
-lat_delta = 0.1
-long_delta = 0.15
+yosemite_boundary: BBox = (37.60, -119.80, 38.00, -119.00)  # south, west, north, east
+lat_delta = 0.10
+long_delta = 0.10
 
 
 south, west, north, east = yosemite_boundary

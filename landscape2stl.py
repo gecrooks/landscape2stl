@@ -54,7 +54,7 @@ BBox: TypeAlias = tuple[
 
 # Various presets featuring varied terrains for testing and development.
 presets: dict[str, tuple[BBox, int]] = {
-    "half_dome": ((37.72, -119.57, 37.76, -119.52), 24_000),  # 37.75°N 119.53°W
+    "half_dome": ((37.72, -119.57, 37.76, -119.52), 24_000), # 37.75°N 119.53°W
     "west_of_half_dome": ((37.72, -119.62, 37.76, -119.57), 24_000),
     "whitney": ((36.56, -118.33, 36.60, -118.28), 24_000),  # High point test
     "yosemite_west": ((37.70, -119.80, 37.80, -119.65), 62_500),
@@ -66,6 +66,7 @@ presets: dict[str, tuple[BBox, int]] = {
     "joshua_tree": ((33.8, -116.0000, 34.0000, -115.75), 125_000),
     "owens_valley": ((36.5, -120, 38, -118), 1_000_000),
     "denali": ((62.5000, -152.0000, 63.5000, -150.0000), 1_000_000),
+    # "cali": ((32, -125., 42, -114),  1_000_000),
 }
 
 
@@ -84,8 +85,9 @@ default_cache = "cache"
 
 @dataclass
 class STLParameters:
-    scale: float = 62_500.0
+    scale: int = 62_500
     resolution: int = 10  # meters
+    resolution_choices: tuple[int] = (10, 30)
     pitch: MM = 0.20  # Half the minimum feature size
 
     min_altitude: Meters = -100.0  # Lowest point in US is -86 m
@@ -133,11 +135,11 @@ class STLParameters:
             if self.scale in default_magnet_spacing:
                 self.magnet_spacing = default_magnet_spacing[self.scale]
 
-
 # end STLParameters
 
 
 def main() -> int:
+    default_params = STLParameters()
     parser = argparse.ArgumentParser(description="Create landscape STLs")
     parser.add_argument(
         "coordinates",
@@ -149,7 +151,7 @@ def main() -> int:
 
     parser.add_argument("--preset", dest="preset", choices=presets.keys())
 
-    parser.add_argument("--scale", dest="scale", type=float, help="Map scale")
+    parser.add_argument("--scale", dest="scale", type=int, help="Map scale")
 
     parser.add_argument(
         "--exaggeration",
@@ -157,6 +159,10 @@ def main() -> int:
         type=float,
         default=1.0,
         help="Vertical exaggeration",
+    )
+
+    parser.add_argument(
+        "--resolution", dest="resolution", default=default_params.resolution, choices=default_params.resolution_choices, type=int, help="DEM resolution"
     )
 
     parser.add_argument(
@@ -189,10 +195,14 @@ def main() -> int:
         parser.print_help()
         return 0
 
+    if args["scale"] is None:
+        args["scale"] = default_params.scale
+
     params = STLParameters(
         scale=args["scale"],
         exaggeration=args["exaggeration"],
         magnet_spacing=args["magnets"],
+        resolution=args["resolution"],
     )
 
     create_stl(params, args["coordinates"], name=args["name"], verbose=args["verbose"])
@@ -214,7 +224,7 @@ def create_stl(
     north_west_enu = lla_to_model((north, west, 0.0), origin, params)
     south_east_enu = lla_to_model((south, east, 0.0), origin, params)
 
-    extent_ns = north_west_enu[0] - south_east_enu[0]
+    extent_ns =  south_east_enu[0] - north_west_enu[0]
     extent_we = north_west_enu[1] - south_east_enu[1]
 
     ns_steps = int(round(extent_ns / params.pitch))
@@ -317,7 +327,6 @@ def download_elevation(
 
     if not os.path.exists(default_cache):
         os.mkdir(default_cache)
-
     fname = os.path.join(default_cache, filename)
 
     if not os.path.exists(fname):
@@ -326,6 +335,7 @@ def download_elevation(
         elevation = py3dep.elevation_bygrid(
             tuple(xcoords), tuple(ycoords), crs="EPSG:4326", resolution=resolution
         )  # or 30
+
         elevation.to_netcdf(fname)
         if verbose:
             print("Done", flush=True)
@@ -424,7 +434,6 @@ def triangulate_surface(
     ycoords = np.linspace(west_north_bot[1], east_north_bot[1], steps)
 
     for x in range(steps - 1):
-        # print(surface[x, y])
         y = -1
         tri = (
             surface[x, y],
@@ -486,6 +495,7 @@ def triangulate_base(
 ) -> ezdxf.render.MeshBuilder:
     model = ezdxf.render.MeshBuilder()
     south, west, north, east = boundary
+    steps = steps//8
 
     base_alt = params.min_altitude - (
         params.base_height * params.scale / (1000 * params.exaggeration)
@@ -507,6 +517,7 @@ def triangulate_base(
     ) / 4
 
     westing = np.linspace(west, east, steps)
+    northing = np.linspace(north, south, steps)
 
     # South
     south_top = [
@@ -535,12 +546,31 @@ def triangulate_base(
         model.add_face([north_top[i + 1], north_bot[i], north_bot[i + 1]][::-1])
 
     # East
-    model.add_face([east_south_top, east_south_bot, east_north_bot])
-    model.add_face([east_north_bot, east_north_top, east_south_top])
+    east_top = [
+        lla_to_model((n, east, params.min_altitude), origin, params) for n in northing
+    ]
+    east_base = [lla_to_model((n, east, base_alt), origin, params) for n in northing]
+    east_bot = [
+        find_point_on_line(llat, llab, bot) for llat, llab in zip(east_top, east_base)
+    ]
+
+    for i in range(steps - 1):
+        model.add_face([east_top[i], east_bot[i], east_top[i + 1]][::-1])
+        model.add_face([east_top[i + 1], east_bot[i], east_bot[i + 1]][::-1])
 
     # West
-    model.add_face([west_south_bot, west_south_top, west_north_bot])
-    model.add_face([west_north_top, west_north_bot, west_south_top])
+    west_top = [
+        lla_to_model((n, west, params.min_altitude), origin, params) for n in northing
+    ]
+    west_base = [lla_to_model((n, west, base_alt), origin, params) for n in northing]
+    west_bot = [
+        find_point_on_line(llat, llab, bot) for llat, llab in zip(west_top, west_base)
+    ]
+
+    for i in range(steps - 1):
+        model.add_face([west_top[i], west_bot[i], west_top[i + 1]])
+        model.add_face([west_top[i + 1], west_bot[i], west_bot[i + 1]])
+
 
     # bot of base
     for i in range(steps - 1):
