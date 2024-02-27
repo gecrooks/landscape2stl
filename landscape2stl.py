@@ -23,7 +23,7 @@ import math
 import os
 import sys
 from dataclasses import dataclass
-from typing import Optional
+from typing import Optional, Tuple
 
 import ezdxf
 import numpy as np
@@ -54,7 +54,7 @@ BBox: TypeAlias = tuple[
 
 # Various presets featuring varied terrains for testing and development.
 presets: dict[str, tuple[BBox, int]] = {
-    "half_dome": ((37.72, -119.57, 37.76, -119.52), 24_000), # 37.75°N 119.53°W
+    "half_dome": ((37.72, -119.57, 37.76, -119.52), 24_000),  # 37.75°N 119.53°W
     "west_of_half_dome": ((37.72, -119.62, 37.76, -119.57), 24_000),
     "whitney": ((36.56, -118.33, 36.60, -118.28), 24_000),  # High point test
     "yosemite_west": ((37.70, -119.80, 37.80, -119.65), 62_500),
@@ -68,6 +68,33 @@ presets: dict[str, tuple[BBox, int]] = {
     "denali": ((62.5000, -152.0000, 63.5000, -150.0000), 1_000_000),
     # "cali": ((32, -125., 42, -114),  1_000_000),
 }
+
+quadrangles = {
+    "hetch_hetchy_reservoir": (37.875, -119.75),
+    "ten_lakes": (37.875, -119.625),
+    "falls_ridge": (37.875, -119.50),
+    "tioga_pass": (37.875, 119.375),
+    "mount_dana": (37.875, -119.25),
+    "lee_vining": (37.875, -119.125),
+    "tamarack_flat": (37.75, -119.75),
+    "yosemite_falls": (37.75, -119.625),
+    "tenaya_lake": (37.75, -119.50),
+    "vogelsang_peak": (37.75, -119.375),
+    "koip_peak": (37.75, -119.25),
+    "june_lake": (37.75, -119.125),
+    "el_capitan": (37.625, -119.75),
+    "half_dome": (37.625, -119.625),
+    "merced_peak": (37.625, -119.50),
+    "mount_lyell": (37.625, -119.375),
+    "mount_ritter": (37.625, -119.25),
+    "mammoth_mtn": (37.625, -119.125),
+}
+
+for name, coords in quadrangles.items():
+    presets["quad_" + name] = (
+        (coords[0], coords[1], coords[0] + 0.125, coords[1] + 0.125),
+        62_500,
+    )
 
 
 standard_scales = [
@@ -85,6 +112,9 @@ default_cache = "cache"
 
 @dataclass
 class STLParameters:
+    projection: str = "none"
+    projection_choices: tuple[int] = ("none", "lambert_conformal_conic")
+
     scale: int = 62_500
     resolution: int = 10  # meters
     resolution_choices: tuple[int] = (10, 30)
@@ -106,7 +136,7 @@ class STLParameters:
     magnet_padding: MM = 0.025
     magnet_depth: MM = 2.00
     magnet_recess: MM = 0.05
-    magnet_sides: int = 24
+    magnet_sides: int = 8
 
     pin_holes: bool = True
     pin_length: MM = 9
@@ -135,6 +165,7 @@ class STLParameters:
             if self.scale in default_magnet_spacing:
                 self.magnet_spacing = default_magnet_spacing[self.scale]
 
+
 # end STLParameters
 
 
@@ -162,7 +193,12 @@ def main() -> int:
     )
 
     parser.add_argument(
-        "--resolution", dest="resolution", default=default_params.resolution, choices=default_params.resolution_choices, type=int, help="DEM resolution"
+        "--resolution",
+        dest="resolution",
+        default=default_params.resolution,
+        choices=default_params.resolution_choices,
+        type=int,
+        help="DEM resolution",
     )
 
     parser.add_argument(
@@ -170,6 +206,14 @@ def main() -> int:
     )
 
     parser.add_argument("--name", dest="name", type=str, help="Filename for model")
+
+    parser.add_argument(
+        "--projection",
+        dest="projection",
+        type=str,
+        choices=default_params.projection_choices,
+        help="Projection for model",
+    )
 
     parser.add_argument("-v", "--verbose", action="store_true")
 
@@ -203,6 +247,7 @@ def main() -> int:
         exaggeration=args["exaggeration"],
         magnet_spacing=args["magnets"],
         resolution=args["resolution"],
+        projection=args["projection"],
     )
 
     create_stl(params, args["coordinates"], name=args["name"], verbose=args["verbose"])
@@ -224,7 +269,7 @@ def create_stl(
     north_west_enu = lla_to_model((north, west, 0.0), origin, params)
     south_east_enu = lla_to_model((south, east, 0.0), origin, params)
 
-    extent_ns =  south_east_enu[0] - north_west_enu[0]
+    extent_ns = south_east_enu[0] - north_west_enu[0]
     extent_we = north_west_enu[1] - south_east_enu[1]
 
     ns_steps = int(round(extent_ns / params.pitch))
@@ -495,7 +540,7 @@ def triangulate_base(
 ) -> ezdxf.render.MeshBuilder:
     model = ezdxf.render.MeshBuilder()
     south, west, north, east = boundary
-    steps = steps//8
+    steps = steps // 8
 
     base_alt = params.min_altitude - (
         params.base_height * params.scale / (1000 * params.exaggeration)
@@ -571,7 +616,6 @@ def triangulate_base(
         model.add_face([west_top[i], west_bot[i], west_top[i + 1]])
         model.add_face([west_top[i + 1], west_bot[i], west_bot[i + 1]])
 
-
     # bot of base
     for i in range(steps - 1):
         model.add_face([north_bot[i], south_bot[i], north_bot[i + 1]][::-1])
@@ -614,7 +658,6 @@ def triangulate_base(
     east_normal = triangle_normal(east_south_top, east_south_bot, east_north_top)
 
     if params.magnet_holes:
-
         mag_radius = (params.magnet_diameter) / 2 + params.magnet_padding
         mag_depth = params.magnet_depth + params.magnet_recess
         mag_sides = params.magnet_sides
@@ -648,7 +691,6 @@ def triangulate_base(
             model_csg = model_csg - CSG(hole)
 
     if params.pin_holes:
-
         pin_length = params.pin_length
         pin_radius = (params.pin_diameter / 2) + params.pin_padding
         pin_sides = params.pin_sides
@@ -870,12 +912,36 @@ def lla_to_model(
     to model ENU Cartesian coordinates in millimeters
     """
 
-    lat, lon, alt = lat_lon_alt
-    enu = lla_to_enu((lat, lon, alt * params.exaggeration), origin_lat_lon_alt)
-    enu_scaled = np.asarray(enu)
-    enu_scaled /= params.scale
+    if params.projection == "none":
+        lat, lon, alt = lat_lon_alt
+        enu = lla_to_enu((lat, lon, alt * params.exaggeration), origin_lat_lon_alt)
+        enu_scaled = np.asarray(enu)
+        enu_scaled /= params.scale
 
-    return (enu_scaled[0], enu_scaled[1], enu_scaled[2])
+        return (enu_scaled[0], enu_scaled[1], enu_scaled[2])
+
+    elif params.projection == "lambert_conformal_conic":
+        lat, lon, alt = lat_lon_alt
+        origin_lat, origin_lon, origin_alt = origin_lat_lon_alt
+
+        east, north = lambert_conformal_conic(lat, lon, center_meridian=origin_lon)
+        center_east, center_north = lambert_conformal_conic(
+            origin_lat, origin_lon, center_meridian=origin_lon
+        )
+
+        east = east - center_east
+        north = north - center_north
+        alt = alt - origin_alt
+
+        up = alt * params.exaggeration
+        enu_scaled = np.asarray([east, north, up])
+        enu_scaled /= params.scale
+        enu_scaled *= 1000  # meters to mm
+
+        return (enu_scaled[0], enu_scaled[1], enu_scaled[2])
+
+    else:
+        assert False
 
 
 def normalize(v: np.ndarray) -> np.ndarray:
@@ -912,6 +978,68 @@ def find_point_on_line(p1, p2, z3):
     y3 = y1 + (y2 - y1) * ((z3 - z1) / (z2 - z1))
 
     return x3, y3, z3
+
+
+def lambert_conformal_conic(
+    lat: float,
+    lon: float,
+    standard_parallel1: float = 33.0,
+    standard_parallel2: float = 45.0,
+    center_meridian: float = -96.0,
+) -> Tuple[float, float]:
+    """
+    Convert latitude and longitude to Lambert Conformal Conic projection coordinates.
+
+    :param lat: Latitude in degrees.
+    :param lon: Longitude in degrees.
+    :param standard_parallel1: First standard parallel.
+    :param standard_parallel2: Second standard parallel.
+    :param center_meridian: Longitude of the central meridian.
+    :return: (x, y) coordinates in the Lambert Conformal Conic projection.
+    """
+
+    # Convert degrees to radians
+    lat = math.radians(lat)
+    lon = math.radians(lon)
+    standard_parallel1 = math.radians(standard_parallel1)
+    standard_parallel2 = math.radians(standard_parallel2)
+    center_meridian = math.radians(center_meridian)
+
+    # Ellipsoid parameters for WGS 84
+    a = 6378137  # semi-major axis
+    f = 1 / 298.257223563  # flattening
+    e = math.sqrt(f * (2 - f))  # eccentricity
+
+    # Calculate the scale factor at the standard parallels
+    m1 = math.cos(standard_parallel1) / math.sqrt(
+        1 - e**2 * math.sin(standard_parallel1) ** 2
+    )
+    m2 = math.cos(standard_parallel2) / math.sqrt(
+        1 - e**2 * math.sin(standard_parallel2) ** 2
+    )
+    t = math.tan(math.pi / 4 - lat / 2) / (
+        (1 - e * math.sin(lat)) / (1 + e * math.sin(lat))
+    ) ** (e / 2)
+    t1 = math.tan(math.pi / 4 - standard_parallel1 / 2) / (
+        (1 - e * math.sin(standard_parallel1)) / (1 + e * math.sin(standard_parallel1))
+    ) ** (e / 2)
+    t2 = math.tan(math.pi / 4 - standard_parallel2 / 2) / (
+        (1 - e * math.sin(standard_parallel2)) / (1 + e * math.sin(standard_parallel2))
+    ) ** (e / 2)
+
+    # Calculate the scale factor n
+    n = math.log(m1 / m2) / math.log(t1 / t2)
+
+    # Calculate the projection constants F and rho0
+    F = m1 / (n * t1**n)
+    rho = a * F * t**n
+    rho0 = a * F * t1**n
+
+    # Calculate the projected coordinates
+    x = rho * math.sin(n * (lon - center_meridian))
+    y = rho0 - rho * math.cos(n * (lon - center_meridian))
+
+    return x, y
 
 
 if __name__ == "__main__":
