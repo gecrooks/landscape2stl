@@ -1,31 +1,17 @@
 #!/usr/bin/env python
 
-from landscape2stl import create_stl, STLParameters, BBox
+from landscape2stl import create_stl, STLParameters, BBox, yosemite_quadrangles, presets
 
 
 params = STLParameters(
     scale=62_500,
-    magnet_spacing=0.025,
     exaggeration=1,
     magnet_holes=True,
-    bolt_holes=True,
+    bolt_holes=False,
     pin_holes=True,
-    pitch=0.2,
     )
 
-yosemite_boundary: BBox = (37.60, -119.80, 38.00, -119.00)  # south, west, north, east
-lat_delta = 0.10
-long_delta = 0.10
 
-
-south, west, north, east = yosemite_boundary
-
-slab_west = west
-while slab_west < east:
-    slab_south = south
-    while slab_south < north:
-        create_stl(params, (slab_south, slab_west, slab_south+lat_delta, slab_west+long_delta),  verbose=True)
-        slab_south += lat_delta
-    slab_west += long_delta
-
-
+for name in yosemite_quadrangles.keys():
+    coords, _ = presets["quad_"+name] 
+    create_stl(params, coords,  name, verbose=True)

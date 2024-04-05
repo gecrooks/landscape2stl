@@ -107,4 +107,4 @@ s = stl_dumps(model_csg.mesh())
 filename = 'magnets.stl'
 
 with open(filename, "w") as f:
-        f.write(s)
+    f.write(s)
