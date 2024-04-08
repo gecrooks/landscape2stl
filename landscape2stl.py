@@ -141,7 +141,7 @@ class STLParameters:
     pin_holes: bool = True
     pin_length: MM = 9
     pin_diameter: MM = 1.75
-    pin_padding: MM = 0.05*4
+    pin_padding: MM = 0.05*3
     pin_sides: int = 8
 
     bolt_holes: bool = False
