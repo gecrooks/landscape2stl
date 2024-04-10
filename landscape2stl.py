@@ -112,12 +112,12 @@ default_cache = "cache"
 
 @dataclass
 class STLParameters:
-    projection: str = "none"
-    projection_choices: tuple[str] = ("none", "lambert_conformal_conic")
+    projection: str = "lambert_conformal_conic"
+    projection_choices: tuple[str] = ("lambert_conformal_conic")
 
     scale: int = 62_500
-    resolution: int = 10  # meters
-    resolution_choices: tuple[int] = (10, 30)
+    resolution: int = 0  # Auto set in __post_init__
+    resolution_choices: tuple[int] = (10, 30)  # meters
     pitch: MM = 0.40  # Nozzle size
 
     min_altitude: Meters = -100.0  # Lowest point in US is -86 m
@@ -131,7 +131,7 @@ class STLParameters:
     base_height: MM = 10.0
 
     magnet_holes: bool = True
-    magnet_spacing: Degrees = 0.0
+    magnet_spacing: Degrees = 0.0   # Auto set in __post_init__
     magnet_diameter: MM = 6.00
     magnet_padding: MM = 0.025 
     magnet_depth: MM = 2.00
@@ -152,18 +152,16 @@ class STLParameters:
     bolt_hole_sides: int = 24
 
     def __post_init__(self):
-        default_magnet_spacing = {
-            24_000: 0.01,
-            62_500: 0.025,
-            125_000: 0.05,
-            250_000: 0.10,
-            500_000: 0.25,  # ???
-            1_000_000: 0.50,  # ???
-        }
 
         if not self.magnet_spacing:
-            if self.scale in default_magnet_spacing:
-                self.magnet_spacing = default_magnet_spacing[self.scale]
+            self.magnet_spacing  = self.scale/2_000_000
+
+        if not self.resolution:
+            if self.scale <250_000:
+                self.resolution = self.resolution_choices[0]
+            else:
+                self.resolution = self.resolution_choices[1]
+
 
 # end STLParameters
 
@@ -450,19 +448,34 @@ def triangulate_surface(
     for x in range(steps - 1):
         y = 0
         # Sloped edge
+        # tri = (
+        #     surface[x, y],
+        #     (xcoords[x], ycoords[x], bot_height),
+        #     (xcoords[x + 1], ycoords[x + 1], bot_height),
+        # )
+
+        # model.add_face(tri)
+        # tri = (
+        #     surface[x, y],
+        #     (xcoords[x + 1], ycoords[x + 1], bot_height),
+        #     surface[x + 1, y],
+        # )
+        # model.add_face(tri)
+
         tri = (
             surface[x, y],
-            (xcoords[x], ycoords[x], bot_height),
-            (xcoords[x + 1], ycoords[x + 1], bot_height),
+            (surface[x, y][0], surface[x, y][1], bot_height),
+            (surface[x+1, y][0], surface[x+1, y][1], bot_height),
         )
 
         model.add_face(tri)
         tri = (
             surface[x, y],
-            (xcoords[x + 1], ycoords[x + 1], bot_height),
+            (surface[x+1, y][0], surface[x+1, y][1], bot_height),
             surface[x + 1, y],
         )
         model.add_face(tri)
+
 
     # north
     xcoords = np.linspace(west_north_bot[0], east_north_bot[0], steps)
@@ -470,18 +483,33 @@ def triangulate_surface(
 
     for x in range(steps - 1):
         y = -1
+    #     tri = (
+    #         surface[x, y],
+    #         (xcoords[x], ycoords[x], bot_height),
+    #         (xcoords[x + 1], ycoords[x + 1], bot_height),
+    #     )
+    #     model.add_face(tri)
+    #     tri = (
+    #         surface[x, y],
+    #         (xcoords[x + 1], ycoords[x + 1], bot_height),
+    #         surface[x + 1, y],
+    #     )
+    #     model.add_face(tri)
+
         tri = (
             surface[x, y],
-            (xcoords[x], ycoords[x], bot_height),
-            (xcoords[x + 1], ycoords[x + 1], bot_height),
+            (surface[x, y][0], surface[x, y][1], bot_height),
+            (surface[x+1, y][0], surface[x+1, y][1], bot_height),
         )
+
         model.add_face(tri)
         tri = (
             surface[x, y],
-            (xcoords[x + 1], ycoords[x + 1], bot_height),
+            (surface[x+1, y][0], surface[x+1, y][1], bot_height),
             surface[x + 1, y],
         )
         model.add_face(tri)
+
 
     # west
     xcoords = np.linspace(west_south_bot[0], west_north_bot[0], steps)
@@ -944,7 +972,7 @@ def lla_to_model(
     """
 
     if params.projection == "none":
-
+        # Probably broken at this point. Do not use.
         lat, lon, alt = lat_lon_alt
         enu = lla_to_enu((lat, lon, alt * params.exaggeration), origin_lat_lon_alt)
         enu_scaled = np.asarray(enu)
