@@ -34,6 +34,8 @@ from ezdxf.addons.pycsg import CSG
 from ezdxf.render.forms import cylinder_2p
 from numpy.typing import ArrayLike
 from typing_extensions import TypeAlias
+import pandas as pd
+import zipfile
 
 # Many units and coordinate systems. Use TypeAlias's in desperate effort to
 # keep everything straight
@@ -123,8 +125,8 @@ class STLParameters:
     min_altitude: Meters = -100.0  # Lowest point in US is -86 m
 
     drop_sea_level: bool = True
-    sea_level: Meters = 1.0  # 0.01
-    sea_level_drop: MM = 0.4
+    sea_level: Meters = 1.7
+    sea_level_drop: MM = 0.24 # 3 layers
 
     exaggeration: float = 1.0
 
@@ -179,6 +181,10 @@ def main() -> int:
 
     parser.add_argument("--preset", dest="preset", choices=presets.keys())
 
+    parser.add_argument("--quad", dest="quad", type=str)
+
+    parser.add_argument("--state", dest="state", type=str, default='CA')
+
     parser.add_argument("--scale", dest="scale", type=int, help="Map scale")
 
     parser.add_argument(
@@ -199,7 +205,7 @@ def main() -> int:
 
     parser.add_argument("--name", dest="name", type=str, help="Filename for model")
 
-    parser.add_argument("--projection", dest="projection", type=str, default = "lambert_conformal_conic", choices=default_params.projection_choices, help="Projection for model")
+    # parser.add_argument("--projection", dest="projection", type=str, default = "lambert_conformal_conic", choices=default_params.projection_choices, help="Projection for model")
 
     parser.add_argument("-v", "--verbose", action="store_true")
 
@@ -221,6 +227,15 @@ def main() -> int:
         if args["name"] is None:
             args["name"] = args["preset"]
 
+    if args["quad"] is not None:
+        name = args["quad"].lower().replace(' ', '_')
+        coords = quad_coordinates(name, args["state"])
+        args["coordinates"] = coords
+        args["scale"]= 62_500
+
+        if args["name"] is None:
+            args["name"] = "quad_" + args["state"].lower() + "_" + name
+
     if not args["coordinates"]:
         parser.print_help()
         return 0
@@ -233,12 +248,37 @@ def main() -> int:
         exaggeration=args["exaggeration"],
         magnet_spacing=args["magnets"],
         resolution=args["resolution"],
-        projection=args["projection"],
+        # projection=args["projection"],
     )
 
     create_stl(params, args["coordinates"], name=args["name"], verbose=args["verbose"])
 
     return 0
+
+
+# TODO: Download zip file and store in cache
+def quad_coordinates(map_name, state="CA"):
+    zip_file_path = 'ustopo_current.zip'
+    csv_file_name = 'ustopo_current.csv'
+
+    with zipfile.ZipFile(zip_file_path, 'r') as z:
+        with z.open(csv_file_name) as csv_file:
+            df = pd.read_csv(csv_file)
+
+    map_name = map_name.lower().replace("_", " ")
+
+    condition = (df['map_name'].str.lower() == map_name) & df['state_list'].str.contains(state)
+
+    row = df[condition]
+
+    if len(row) == 0 :
+        raise ValueError("Not found")
+
+    southbc = row['southbc'].astype(float).iloc[0]
+    westbc = row['westbc'].astype(float).iloc[0]
+
+    return southbc, westbc, southbc + 1/8, westbc + 1/8
+
 
 
 def create_stl(
@@ -390,10 +430,16 @@ def elevation_to_surface(
     elevation_array = np.nan_to_num(elevation_array, nan=0.0)
 
     if params.drop_sea_level:
+        from scipy import signal
         dropped_sea_level = (
             -(params.scale * params.sea_level_drop / 1000) / params.exaggeration
         )
-        elevation_array[elevation_array <= params.sea_level] = dropped_sea_level
+        sea = np.abs(elevation_array) <= params.sea_level
+        kernel = np.ones((3, 3), dtype=np.int8)
+        kernel[1,1] = 0
+        N = signal.convolve(sea, kernel, mode='same')
+        T = signal.convolve(np.ones_like(elevation_array), kernel, mode='same')
+        elevation_array = np.where(np.abs(elevation_array) <= params.sea_level, dropped_sea_level * (N /T), elevation_array)
 
     surface = np.zeros(shape=(steps, steps, 3))
 
@@ -973,6 +1019,7 @@ def lla_to_model(
 
     if params.projection == "none":
         # Probably broken at this point. Do not use.
+        assert False
         lat, lon, alt = lat_lon_alt
         enu = lla_to_enu((lat, lon, alt * params.exaggeration), origin_lat_lon_alt)
         enu_scaled = np.asarray(enu)
