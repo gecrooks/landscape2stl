@@ -3,3 +3,6 @@ scipy
 xarray
 py3dep
 ezdxf
+pandas
+requests
+us
