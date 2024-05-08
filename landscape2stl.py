@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 
-# Copyright 2023, Gavin E. Crooks and contributors
+# Copyright 2023-2024, Gavin E. Crooks
 #
 # This source code is licensed under the MIT License
 # found in the LICENSE file in the root directory of this source tree.
@@ -14,6 +14,8 @@
 # Gavin E. Crooks 2023
 #
 
+# Disclaimer: This is ugly hacked together prototype code. You have been warned.
+
 # Note to self:
 # latitude is north-south
 # longitude is west-east (long way around)
@@ -22,20 +24,22 @@ import argparse
 import math
 import os
 import sys
+import zipfile
 from dataclasses import dataclass
 from typing import Optional, Tuple
 
 import ezdxf
 import numpy as np
+import pandas as pd
 import py3dep
+import requests
+import us
 import xarray as xr
 from ezdxf.addons.meshex import stl_dumpb
 from ezdxf.addons.pycsg import CSG
 from ezdxf.render.forms import cylinder_2p
 from numpy.typing import ArrayLike
 from typing_extensions import TypeAlias
-import pandas as pd
-import zipfile
 
 # Many units and coordinate systems. Use TypeAlias's in desperate effort to
 # keep everything straight
@@ -60,53 +64,23 @@ presets: dict[str, tuple[BBox, int]] = {
     "half_dome": ((37.72, -119.57, 37.77, -119.51), 24_000),  # 37.75°N 119.53°W
     "west_of_half_dome": ((37.72, -119.62, 37.76, -119.57), 24_000),
     "whitney": ((36.56, -118.33, 36.60, -118.28), 24_000),  # High point test
-    "yosemite_west": ((37.70, -119.80, 37.80, -119.65), 62_500),
-    "yosemite_valley": ((37.70, -119.65, 37.80, -119.50), 62_500),
-    "clouds_rest": ((37.70, -119.50, 37.80, -119.35), 62_500),
     "grand_canyon": ((36.0000, -112.2000, 36.2000, -111.9500), 125_000),
     "shasta": ((41.3000, -122.3500, 41.5000, -122.0500), 125_000),
     "shasta_west": ((41.3000, -122.6500, 41.5000, -122.3500), 125_000),
     "joshua_tree": ((33.8, -116.0000, 34.0000, -115.75), 125_000),
     "owens_valley": ((36.5, -120, 38, -118), 1_000_000),
     "denali": ((62.5000, -152.0000, 63.5000, -150.0000), 1_000_000),
-    # "cali": ((32, -125., 42, -114),  1_000_000),
 }
 
-yosemite_quadrangles = {
-    "hetch_hetchy_reservoir": (37.875, -119.75),
-    "ten_lakes": (37.875, -119.625),
-    "falls_ridge": (37.875,  -119.50),
-    "tioga_pass": (37.875, -119.375),
-    "mount_dana": (37.875,  -119.25),
-    "lee_vining": (37.875, -119.125),
 
-    "tamarack_flat": (37.75, -119.75),
-    "yosemite_falls": (37.75, -119.625),
-    "tenaya_lake": (37.75, -119.50),
-    "vogelsang_peak": (37.75, -119.375),
-    "koip_peak": (37.75, -119.25),
-    "june_lake": (37.75, -119.125),
-
-    "el_capitan": (37.625, -119.75),
-    "half_dome": (37.625, -119.625),
-    "merced_peak": (37.625, -119.50),
-    "mount_lyell": (37.625,-119.375),
-    "mount_ritter": (37.625,-119.25),
-    "mammoth_mtn": (37.625,-119.125),
-    }
-
-for name, coords in yosemite_quadrangles.items():
-    presets["quad_"+name] = ((coords[0], coords[1], coords[0] + 0.125, coords[1]+0.125), 62_500)
-
-
-standard_scales = [
-    24_000,  # 1" = 2000', about 2.5" to 1 mile
-    62_500,  # about 1" to 1 mile
-    125_000,  # about 1" to 2 miles
-    250_000,  # about 1" to 4 miles
-    500_000,  # about 1" to 8 miles
-    1_000_000,  # about 1" to 16 miles
-]
+# standard_scales = [
+#     24_000,  # 1" = 2000', about 2.5" to 1 mile
+#     62_500,  # about 1" to 1 mile
+#     125_000,  # about 1" to 2 miles
+#     250_000,  # about 1" to 4 miles
+#     500_000,  # about 1" to 8 miles
+#     1_000_000,  # about 1" to 16 miles
+# ]
 
 
 default_cache = "cache"
@@ -114,8 +88,9 @@ default_cache = "cache"
 
 @dataclass
 class STLParameters:
-    projection: str = "lambert_conformal_conic"
-    projection_choices: tuple[str] = ("lambert_conformal_conic")
+    """Parameters for the STL terrain models (apart from actual coordinates).
+    Scale is the important parameter to set, the rest can generally be left at default.
+    """
 
     scale: int = 62_500
     resolution: int = 0  # Auto set in __post_init__
@@ -126,16 +101,16 @@ class STLParameters:
 
     drop_sea_level: bool = True
     sea_level: Meters = 1.7
-    sea_level_drop: MM = 0.24 # 3 layers
+    sea_level_drop: MM = 0.24  # 3 layers
 
-    exaggeration: float = 1.0
+    exaggeration: float = 0.0 # Auto set in __post_init__
 
     base_height: MM = 10.0
 
     magnet_holes: bool = True
-    magnet_spacing: Degrees = 0.0   # Auto set in __post_init__
+    magnet_spacing: Degrees = 0.0  # Auto set in __post_init__
     magnet_diameter: MM = 6.00
-    magnet_padding: MM = 0.025 
+    magnet_padding: MM = 0.025
     magnet_depth: MM = 2.00
     magnet_recess: MM = 0.10
     magnet_sides: int = 24
@@ -143,7 +118,7 @@ class STLParameters:
     pin_holes: bool = True
     pin_length: MM = 9
     pin_diameter: MM = 1.75
-    pin_padding: MM = 0.05*3
+    pin_padding: MM = 0.05 * 3
     pin_sides: int = 8
 
     bolt_holes: bool = False
@@ -154,36 +129,50 @@ class STLParameters:
     bolt_hole_sides: int = 24
 
     def __post_init__(self):
-
         if not self.magnet_spacing:
-            self.magnet_spacing  = self.scale/2_000_000
+            if self.scale == 24_000:
+                self.magnet_spacing = 1/64
+            else:
+                self.magnet_spacing = self.scale / 2_000_000
 
         if not self.resolution:
-            if self.scale <250_000:
+            if self.scale < 250_000:
                 self.resolution = self.resolution_choices[0]
             else:
                 self.resolution = self.resolution_choices[1]
 
+        if not self.exaggeration:
+            # Heuristic for vertical exaggeration
+            # scale exaggeration
+            # <= 62_500     1.0
+            # 125_000       1.5
+            # 250_000       2.0
+            # 500_000       2.5
+            # 1_000_000     3.0
+            if self.scale <= 62_500:
+                self.exaggeration = 1.0
+            else:
+                self.exaggeration = 3 - 0.5 * math.log2(1_000_000/self.scale)
 
 # end STLParameters
 
 
 def main() -> int:
     default_params = STLParameters()
-    parser = argparse.ArgumentParser(description="Create landscape STLs")
+    parser = argparse.ArgumentParser(description="Create quadrangle landscape STLs")
     parser.add_argument(
         "coordinates",
         metavar="S W N E",
         type=float,
         nargs="*",
-        help="Latitude/longitude coordinates for slab (Order south edge, west edge, north edge, east edge)",
+        help="Latitude/longitude coordinates for quadrangle (Order south edge, west edge, north edge, east edge)",
     )
 
     parser.add_argument("--preset", dest="preset", choices=presets.keys())
 
     parser.add_argument("--quad", dest="quad", type=str)
 
-    parser.add_argument("--state", dest="state", type=str, default='CA')
+    parser.add_argument("--state", dest="state", type=str, default="CA")
 
     parser.add_argument("--scale", dest="scale", type=int, help="Map scale")
 
@@ -196,7 +185,12 @@ def main() -> int:
     )
 
     parser.add_argument(
-        "--resolution", dest="resolution", default=default_params.resolution, choices=default_params.resolution_choices, type=int, help="DEM resolution"
+        "--resolution",
+        dest="resolution",
+        default=default_params.resolution,
+        choices=default_params.resolution_choices,
+        type=int,
+        help="DEM resolution",
     )
 
     parser.add_argument(
@@ -205,11 +199,7 @@ def main() -> int:
 
     parser.add_argument("--name", dest="name", type=str, help="Filename for model")
 
-    # parser.add_argument("--projection", dest="projection", type=str, default = "lambert_conformal_conic", choices=default_params.projection_choices, help="Projection for model")
-
     parser.add_argument("-v", "--verbose", action="store_true")
-
-    # TODO: Add cache argument
 
     args = vars(parser.parse_args())
     name = None
@@ -228,10 +218,10 @@ def main() -> int:
             args["name"] = args["preset"]
 
     if args["quad"] is not None:
-        name = args["quad"].lower().replace(' ', '_')
+        name = args["quad"].lower().replace(" ", "_")
         coords = quad_coordinates(name, args["state"])
         args["coordinates"] = coords
-        args["scale"]= 62_500
+        # args["scale"] = 62_500 # params default to this scale
 
         if args["name"] is None:
             args["name"] = "quad_" + args["state"].lower() + "_" + name
@@ -251,40 +241,91 @@ def main() -> int:
         # projection=args["projection"],
     )
 
-    create_stl(params, args["coordinates"], name=args["name"], verbose=args["verbose"])
+    create_stl(
+        params, args["coordinates"], filename=args["name"], verbose=args["verbose"]
+    )
 
     return 0
 
 
-# TODO: Download zip file and store in cache
-def quad_coordinates(map_name, state="CA"):
-    zip_file_path = 'ustopo_current.zip'
-    csv_file_name = 'ustopo_current.csv'
+def ustopo_current():
+    url = "https://prd-tnm.s3.amazonaws.com/StagedProducts/Maps/Metadata/ustopo_current.zip"
+    zip_file_name = "ustopo_current.zip"
+    csv_file_name = "ustopo_current.csv"
+    directory = "cache"
 
-    with zipfile.ZipFile(zip_file_path, 'r') as z:
+    zip_file_path = os.path.join(directory, zip_file_name)
+
+    if not os.path.exists(zip_file_path):
+        os.makedirs(directory, exist_ok=True)
+        response = requests.get(url)
+        with open(zip_file_path, "wb") as f:
+            f.write(response.content)
+
+    with zipfile.ZipFile(zip_file_path, "r") as z:
         with z.open(csv_file_name) as csv_file:
             df = pd.read_csv(csv_file)
 
-    map_name = map_name.lower().replace("_", " ")
+    return df
 
-    condition = (df['map_name'].str.lower() == map_name) & df['state_list'].str.contains(state)
+
+def quad_coordinates(quad_name, state="CA"):
+    df = ustopo_current()
+
+    quad_name = quad_name.lower().replace("_", " ")
+
+    condition = (df["map_name"].str.lower() == quad_name) & df[
+        "state_list"
+    ].str.contains(state)
 
     row = df[condition]
 
-    if len(row) == 0 :
-        raise ValueError("Not found")
+    if len(row) == 0:
+        raise ValueError("Quadrangle " + quad_name + " not found")
 
-    southbc = row['southbc'].astype(float).iloc[0]
-    westbc = row['westbc'].astype(float).iloc[0]
+    southbc = row["southbc"].astype(float).iloc[0]
+    westbc = row["westbc"].astype(float).iloc[0]
 
-    return southbc, westbc, southbc + 1/8, westbc + 1/8
+    return southbc, westbc, southbc + 1 / 8, westbc + 1 / 8
 
+
+def quad_from_coordinates(lat, long):
+    df = ustopo_current()
+
+    condition = (
+        (df["southbc"].astype(float) <= lat)
+        & (lat < df["northbc"].astype(float))
+        & (df["westbc"].astype(float) <= long)
+        & (long < df["eastbc"].astype(float))
+    )
+
+    row = df[condition]
+    print(len(row))
+    if len(row) == 0:
+        return (None, None)
+    name = row["map_name"].astype(str).iloc[0]
+    state_name = row["primary_state"].astype(str).iloc[0]
+    state = us.states.lookup(state_name)
+
+    return name, state.abbr
+
+
+def create_quad_stl(name, state, filename=None, verbose=False):
+    coords = quad_coordinates(name, state)
+    if filename is None:
+        filename = "quad_" + state.lower() + "_" + name.lower().replace(" ", "_")
+
+    params = STLParameters(
+        scale=62_500,
+    )
+
+    create_stl(params, coords, filename, verbose)
 
 
 def create_stl(
     params: STLParameters,
     boundary: BBox,
-    name: Optional[str] = None,
+    filename: Optional[str] = None,
     verbose: bool = False,
 ) -> None:
     # Locate origin
@@ -310,11 +351,23 @@ def create_stl(
     surface = elevation_to_surface(elevation, origin, params)
 
     # Add a little bit of noise. Hack for smooth seascapes
+    # (I think this is necessary to make sure we don't have large number of co-planer triangles
+    # Which seems to upset the CSG module)
     # FIXME: Do I still need this hack?
-    surface += 0.001 * np.random.uniform(size=surface.shape)
+    # surface += 0.001 * np.random.uniform(size=surface.shape)
 
     if verbose:
         print("Triangulating surface...")
+
+
+    # Another hack: We build the surface and the base separately. The base
+    # alone uses Constructive Solid Geometry (CSG). The CSG module in ezdxf is using 
+    # a binary space partitioning (BSP) tree. This shatters triangles into lots of
+    # sub-triangles. So if we tried using CSG on our landscape surface that the 100s of
+    # thousands of initial triangles ends up as millions.
+
+    # Also even with small models ezdxf generates non-manifold meshes that can upset the slicer.
+    # Errors seem to be reparable or ignorable (mostly).
 
     surface_mesh = triangulate_surface(surface, boundary, origin, params)
 
@@ -335,10 +388,10 @@ def create_stl(
     if verbose:
         print("Creating STL...")
 
-    if name is None:
-        filename = "{:.2f}_{:.2f}_{:.2f}_{:.2f}.stl".format(*boundary)
+    if filename is None:
+        filename = "{:f}_{:f}_{:f}_{:f}.stl".format(*boundary)
     else:
-        filename = name + ".stl"
+        filename = filename + ".stl"
 
     binary_stl = stl_dumpb(model)
 
@@ -352,6 +405,7 @@ def create_stl(
 # end create_stl
 
 
+# FIXME: Still needed with current projection?
 def locate_origin(boundary: BBox) -> LLA:
     # Locate a point in the middle of the landscape tile which defines the
     # local up direction. Model distances are defined relative to this point
@@ -431,15 +485,20 @@ def elevation_to_surface(
 
     if params.drop_sea_level:
         from scipy import signal
+
         dropped_sea_level = (
             -(params.scale * params.sea_level_drop / 1000) / params.exaggeration
         )
         sea = np.abs(elevation_array) <= params.sea_level
         kernel = np.ones((3, 3), dtype=np.int8)
-        kernel[1,1] = 0
-        N = signal.convolve(sea, kernel, mode='same')
-        T = signal.convolve(np.ones_like(elevation_array), kernel, mode='same')
-        elevation_array = np.where(np.abs(elevation_array) <= params.sea_level, dropped_sea_level * (N /T), elevation_array)
+        kernel[1, 1] = 0
+        N = signal.convolve(sea, kernel, mode="same")
+        T = signal.convolve(np.ones_like(elevation_array), kernel, mode="same")
+        elevation_array = np.where(
+            np.abs(elevation_array) <= params.sea_level,
+            dropped_sea_level * (N / T),
+            elevation_array,
+        )
 
     surface = np.zeros(shape=(steps, steps, 3))
 
@@ -484,10 +543,6 @@ def triangulate_surface(
 
     bot_height = west_north_bot[2]
 
-   
-
-
-
     # south
     xcoords = np.linspace(west_south_bot[0], east_south_bot[0], steps)
     ycoords = np.linspace(west_south_bot[1], east_south_bot[1], steps)
@@ -511,17 +566,16 @@ def triangulate_surface(
         tri = (
             surface[x, y],
             (surface[x, y][0], surface[x, y][1], bot_height),
-            (surface[x+1, y][0], surface[x+1, y][1], bot_height),
+            (surface[x + 1, y][0], surface[x + 1, y][1], bot_height),
         )
 
         model.add_face(tri)
         tri = (
             surface[x, y],
-            (surface[x+1, y][0], surface[x+1, y][1], bot_height),
+            (surface[x + 1, y][0], surface[x + 1, y][1], bot_height),
             surface[x + 1, y],
         )
         model.add_face(tri)
-
 
     # north
     xcoords = np.linspace(west_north_bot[0], east_north_bot[0], steps)
@@ -529,33 +583,32 @@ def triangulate_surface(
 
     for x in range(steps - 1):
         y = -1
-    #     tri = (
-    #         surface[x, y],
-    #         (xcoords[x], ycoords[x], bot_height),
-    #         (xcoords[x + 1], ycoords[x + 1], bot_height),
-    #     )
-    #     model.add_face(tri)
-    #     tri = (
-    #         surface[x, y],
-    #         (xcoords[x + 1], ycoords[x + 1], bot_height),
-    #         surface[x + 1, y],
-    #     )
-    #     model.add_face(tri)
+        #     tri = (
+        #         surface[x, y],
+        #         (xcoords[x], ycoords[x], bot_height),
+        #         (xcoords[x + 1], ycoords[x + 1], bot_height),
+        #     )
+        #     model.add_face(tri)
+        #     tri = (
+        #         surface[x, y],
+        #         (xcoords[x + 1], ycoords[x + 1], bot_height),
+        #         surface[x + 1, y],
+        #     )
+        #     model.add_face(tri)
 
         tri = (
             surface[x, y],
             (surface[x, y][0], surface[x, y][1], bot_height),
-            (surface[x+1, y][0], surface[x+1, y][1], bot_height),
+            (surface[x + 1, y][0], surface[x + 1, y][1], bot_height),
         )
 
         model.add_face(tri)
         tri = (
             surface[x, y],
-            (surface[x+1, y][0], surface[x+1, y][1], bot_height),
+            (surface[x + 1, y][0], surface[x + 1, y][1], bot_height),
             surface[x + 1, y],
         )
         model.add_face(tri)
-
 
     # west
     xcoords = np.linspace(west_south_bot[0], west_north_bot[0], steps)
@@ -593,30 +646,27 @@ def triangulate_surface(
         )
         model.add_face(tri)
 
-
- # # Bot surface
- #    surface[:, :, 2] = bot_height
- #    for x in range(steps - 1):
- #        for y in range(steps - 1):
- #            if ((x + y) % 2) == 0:
- #                model.add_face(
- #                    [surface[x, y], surface[x + 1, y], surface[x + 1, y + 1]]
- #                )
- #                model.add_face(
- #                    [surface[x, y], surface[x + 1, y + 1], surface[x, y + 1]]
- #                )
- #            else:
- #                model.add_face([surface[x, y + 1], surface[x, y], surface[x + 1, y]])
- #                model.add_face(
- #                    [surface[x + 1, y], surface[x + 1, y + 1], surface[x, y + 1]]
- #                )
-
-
-
+    # # Bot surface
+    #    surface[:, :, 2] = bot_height
+    #    for x in range(steps - 1):
+    #        for y in range(steps - 1):
+    #            if ((x + y) % 2) == 0:
+    #                model.add_face(
+    #                    [surface[x, y], surface[x + 1, y], surface[x + 1, y + 1]]
+    #                )
+    #                model.add_face(
+    #                    [surface[x, y], surface[x + 1, y + 1], surface[x, y + 1]]
+    #                )
+    #            else:
+    #                model.add_face([surface[x, y + 1], surface[x, y], surface[x + 1, y]])
+    #                model.add_face(
+    #                    [surface[x + 1, y], surface[x + 1, y + 1], surface[x, y + 1]]
+    #                )
 
     return model
 
 
+# FIXME: Needs to be simplified now no longer trying to be overly clever.
 def triangulate_base(
     boundary: BBox,
     origin: LLA,
@@ -625,7 +675,7 @@ def triangulate_base(
 ) -> ezdxf.render.MeshBuilder:
     model = ezdxf.render.MeshBuilder()
     south, west, north, east = boundary
-    steps = steps//8
+    steps = steps // 8
 
     base_alt = params.min_altitude - (
         params.base_height * params.scale / (1000 * params.exaggeration)
@@ -691,7 +741,6 @@ def triangulate_base(
     # model.add_face([east_top[0], east_bot[0], east_top[-1]][::-1])
     # model.add_face([east_top[-1], east_bot[0], east_bot[-1]][::-1])
 
-
     # West
     west_top = [
         lla_to_model((n, west, params.min_altitude), origin, params) for n in northing
@@ -708,8 +757,6 @@ def triangulate_base(
     # model.add_face([west_top[0], west_bot[0], west_top[-1]])
     # model.add_face([west_top[-1], west_bot[0], west_bot[-1]])
 
-
-
     # bot of base
     for i in range(steps - 1):
         model.add_face([north_bot[i], south_bot[i], north_bot[i + 1]][::-1])
@@ -719,8 +766,6 @@ def triangulate_base(
     # for i in range(steps - 1):
     #     model.add_face([north_top[i], south_top[i], north_top[i + 1]])
     #     model.add_face([north_top[i + 1], south_top[i], south_top[i + 1]])
-
-
 
     def make_hole(sides, depth, radius, center, axis):
         w = axis
@@ -759,7 +804,6 @@ def triangulate_base(
     east_normal = triangle_normal(east_south_top, east_south_bot, east_north_top)
 
     if params.magnet_holes:
-
         mag_radius = (params.magnet_diameter) / 2 + params.magnet_padding
         mag_depth = params.magnet_depth + params.magnet_recess
         mag_sides = params.magnet_sides
@@ -793,7 +837,6 @@ def triangulate_base(
             model_csg = model_csg - CSG(hole)
 
     if params.pin_holes:
-
         pin_length = params.pin_length
         pin_radius = (params.pin_diameter / 2) + params.pin_padding
         pin_sides = params.pin_sides
@@ -882,8 +925,6 @@ def triangulate_base(
         cylinder.translate(center)
         model_csg = model_csg - CSG(cylinder)
 
-
-
     model = model_csg.mesh()
     return model
 
@@ -905,6 +946,7 @@ def triangle_normal(A: ArrayLike, B: ArrayLike, C: ArrayLike) -> np.ndarray:
     return normal_normalized
 
 
+# FIXME: No longer needed, remove
 def lla_to_ecef(lat_lon_alt: LLA) -> ECEF:
     """
     Convert latitude, longitude, altitude (LLA) coordinates
@@ -930,7 +972,7 @@ def lla_to_ecef(lat_lon_alt: LLA) -> ECEF:
 
     return X, Y, Z
 
-
+# FIXME: No longer needed, remove
 def ecef_to_lla(ecef: ECEF) -> LLA:
     """
     Convert to Earth-Centered, Earth-Fixed (ECEF) Cartesian coordinates
@@ -968,6 +1010,7 @@ def ecef_to_lla(ecef: ECEF) -> LLA:
     return lat_deg, lon_deg, alt
 
 
+# FIXME: No longer needed, remove?
 def lla_to_enu(lat_lon_alt: LLA, origin_lat_lon_alt: LLA) -> ENU:
     """
     Convert latitude, longitude, altitude (LLA) coordinates
@@ -1017,39 +1060,38 @@ def lla_to_model(
     to model ENU Cartesian coordinates in millimeters
     """
 
-    if params.projection == "none":
-        # Probably broken at this point. Do not use.
-        assert False
-        lat, lon, alt = lat_lon_alt
-        enu = lla_to_enu((lat, lon, alt * params.exaggeration), origin_lat_lon_alt)
-        enu_scaled = np.asarray(enu)
-        enu_scaled /= params.scale
+    # if params.projection == "none":
+    #     # Probably broken at this point. Do not use.
+    #     assert False
+    #     lat, lon, alt = lat_lon_alt
+    #     enu = lla_to_enu((lat, lon, alt * params.exaggeration), origin_lat_lon_alt)
+    #     enu_scaled = np.asarray(enu)
+    #     enu_scaled /= params.scale
 
-        return (enu_scaled[0], enu_scaled[1], enu_scaled[2])
+    #     return (enu_scaled[0], enu_scaled[1], enu_scaled[2])
 
-    elif params.projection == "lambert_conformal_conic":
-        lat, lon, alt = lat_lon_alt
-        origin_lat, origin_lon, origin_alt = origin_lat_lon_alt
+    # elif params.projection == "lambert_conformal_conic":
+    lat, lon, alt = lat_lon_alt
+    origin_lat, origin_lon, origin_alt = origin_lat_lon_alt
 
+    east, north = lambert_conformal_conic(lat, lon, center_meridian=origin_lon)
+    center_east, center_north = lambert_conformal_conic(
+        origin_lat, origin_lon, center_meridian=origin_lon
+    )
 
-        east, north = lambert_conformal_conic(lat, lon, center_meridian=origin_lon)
-        center_east, center_north = lambert_conformal_conic(origin_lat, origin_lon, center_meridian=origin_lon)
+    east = east - center_east
+    north = north - center_north
+    alt = alt - origin_alt
 
-        east = east - center_east
-        north = north - center_north
-        alt = alt - origin_alt
+    up = alt * params.exaggeration
+    enu_scaled = np.asarray([east, north, up])
+    enu_scaled /= params.scale
+    enu_scaled *= 1000  # meters to mm
 
+    return (enu_scaled[0], enu_scaled[1], enu_scaled[2])
 
-        up = alt * params.exaggeration
-        enu_scaled = np.asarray([east, north, up])
-        enu_scaled /= params.scale
-        enu_scaled *= 1000  # meters to mm
-
-        return (enu_scaled[0], enu_scaled[1], enu_scaled[2])
-
-
-    else:
-        assert False
+    # else:
+    #     assert False
 
 
 def normalize(v: np.ndarray) -> np.ndarray:
@@ -1060,6 +1102,7 @@ def angle_between(v: np.ndarray, w: np.ndarray) -> np.ndarray:
     return np.arccos(np.dot(v, w) / (np.linalg.norm(v) * np.linalg.norm(w)))
 
 
+# FIXME: Probably no longer needed, remove?
 def corners_to_model(
     boundary: BBox,
     alt: Meters,
@@ -1075,6 +1118,8 @@ def corners_to_model(
     return west_north, west_south, east_south, east_north
 
 
+# FIXME: Remove
+# This routine no longer necessary now using projection. Should be removed.
 def find_point_on_line(p1, p2, z3):
     x1, y1, z1 = p1
     x2, y2, z2 = p2
@@ -1088,11 +1133,13 @@ def find_point_on_line(p1, p2, z3):
     return x3, y3, z3
 
 
-def lambert_conformal_conic(lat: float,
-                            lon: float,
-                            standard_parallel1: float = 33.,
-                            standard_parallel2: float = 45.,
-                            center_meridian: float = -96.) -> Tuple[float, float]:
+def lambert_conformal_conic(
+    lat: float,
+    lon: float,
+    standard_parallel1: float = 33.0,
+    standard_parallel2: float = 45.0,
+    center_meridian: float = -96.0,
+) -> Tuple[float, float]:
     """
     Convert latitude and longitude to Lambert Conformal Conic projection coordinates.
 
@@ -1117,11 +1164,21 @@ def lambert_conformal_conic(lat: float,
     e = math.sqrt(f * (2 - f))  # eccentricity
 
     # Calculate the scale factor at the standard parallels
-    m1 = math.cos(standard_parallel1) / math.sqrt(1 - e**2 * math.sin(standard_parallel1)**2)
-    m2 = math.cos(standard_parallel2) / math.sqrt(1 - e**2 * math.sin(standard_parallel2)**2)
-    t = math.tan(math.pi / 4 - lat / 2) / ((1 - e * math.sin(lat)) / (1 + e * math.sin(lat)))**(e / 2)
-    t1 = math.tan(math.pi / 4 - standard_parallel1 / 2) / ((1 - e * math.sin(standard_parallel1)) / (1 + e * math.sin(standard_parallel1)))**(e / 2)
-    t2 = math.tan(math.pi / 4 - standard_parallel2 / 2) / ((1 - e * math.sin(standard_parallel2)) / (1 + e * math.sin(standard_parallel2)))**(e / 2)
+    m1 = math.cos(standard_parallel1) / math.sqrt(
+        1 - e**2 * math.sin(standard_parallel1) ** 2
+    )
+    m2 = math.cos(standard_parallel2) / math.sqrt(
+        1 - e**2 * math.sin(standard_parallel2) ** 2
+    )
+    t = math.tan(math.pi / 4 - lat / 2) / (
+        (1 - e * math.sin(lat)) / (1 + e * math.sin(lat))
+    ) ** (e / 2)
+    t1 = math.tan(math.pi / 4 - standard_parallel1 / 2) / (
+        (1 - e * math.sin(standard_parallel1)) / (1 + e * math.sin(standard_parallel1))
+    ) ** (e / 2)
+    t2 = math.tan(math.pi / 4 - standard_parallel2 / 2) / (
+        (1 - e * math.sin(standard_parallel2)) / (1 + e * math.sin(standard_parallel2))
+    ) ** (e / 2)
 
     # Calculate the scale factor n
     n = math.log(m1 / m2) / math.log(t1 / t2)
