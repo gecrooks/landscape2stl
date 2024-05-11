@@ -161,3 +161,9 @@ cython_debug/
 
 
 cache
+*.stl
+junk
+proto
+
+
+
