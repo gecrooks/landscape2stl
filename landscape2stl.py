@@ -329,12 +329,13 @@ def create_stl(
     filename: Optional[str] = None,
     verbose: bool = False,
 ) -> None:
-    # Locate origin
-    south, west, north, east = boundary
-    origin = locate_origin(boundary)
-
     if verbose:
         print(params)
+
+    # Locate origin
+    south, west, north, east = boundary
+    origin = (south + north) / 2, (east + west) / 2, 0.0
+
 
     # Calculate steps...
     north_west_enu = lla_to_model((north, west, 0.0), origin, params)
@@ -367,8 +368,8 @@ def create_stl(
     # Another hack: We build the surface and the base separately. The base
     # alone uses Constructive Solid Geometry (CSG). The CSG module in ezdxf is using 
     # a binary space partitioning (BSP) tree. This shatters triangles into lots of
-    # sub-triangles. So if we tried using CSG on our landscape surface that the 100s of
-    # thousands of initial triangles ends up as millions.
+    # sub-triangles. So if we tried using CSG on our landscape surface that has 100s of
+    # thousands of initial triangles we end up with millions.
 
     # Also even with small models ezdxf generates non-manifold meshes that can upset the slicer.
     # Errors seem to be reparable or ignorable (mostly).
@@ -407,35 +408,6 @@ def create_stl(
 
 
 # end create_stl
-
-
-# FIXME: Still needed with current projection?
-def locate_origin(boundary: BBox) -> LLA:
-    # Locate a point in the middle of the landscape tile which defines the
-    # local up direction. Model distances are defined relative to this point
-
-    south, west, north, east = boundary
-
-    origin = (south + north) / 2, (east + west) / 2, -100000.0
-
-    # adjust origin so that 4 corners are equal height
-
-    alt = -100
-    west_north = lla_to_ecef((north, west, alt))
-    east_north = lla_to_ecef((north, east, alt))
-    east_south = lla_to_ecef((south, east, alt))
-    west_south = lla_to_ecef((south, west, alt))
-    new_origin_ecef = (
-        (west_north[0] + east_south[0] + west_south[0] + east_north[0]) / 4,
-        (west_north[1] + east_south[1] + west_south[1] + east_north[1]) / 4,
-        (west_north[2] + east_south[2] + west_south[2] + east_north[2]) / 4,
-    )
-    new_origin = ecef_to_lla(new_origin_ecef)
-
-    # Honestly, dunno why this works.
-    origin = (origin[0] * 2 - new_origin[0], new_origin[1], 0.0)
-
-    return origin
 
 
 def download_elevation(
