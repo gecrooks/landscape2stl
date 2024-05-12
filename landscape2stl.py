@@ -103,7 +103,7 @@ class STLParameters:
     sea_level: Meters = 1.7
     sea_level_drop: MM = 0.24  # 3 layers
 
-    exaggeration: float = 0.0 # Auto set in __post_init__
+    exaggeration: float = 0.0  # Auto set in __post_init__
 
     base_height: MM = 10.0
 
@@ -131,7 +131,7 @@ class STLParameters:
     def __post_init__(self):
         if not self.magnet_spacing:
             if self.scale == 24_000:
-                self.magnet_spacing = 1/64
+                self.magnet_spacing = 1 / 64
             else:
                 self.magnet_spacing = self.scale / 2_000_000
 
@@ -152,7 +152,8 @@ class STLParameters:
             if self.scale <= 62_500:
                 self.exaggeration = 1.0
             else:
-                self.exaggeration = 3 - 0.5 * math.log2(1_000_000/self.scale)
+                self.exaggeration = 3 - 0.5 * math.log2(1_000_000 / self.scale)
+
 
 # end STLParameters
 
@@ -240,7 +241,6 @@ def main() -> int:
         # resolution=args["resolution"],
         # projection=args["projection"],
     )
-
 
     create_stl(
         params, args["coordinates"], filename=args["name"], verbose=args["verbose"]
@@ -336,7 +336,6 @@ def create_stl(
     south, west, north, east = boundary
     origin = (south + north) / 2, (east + west) / 2, 0.0
 
-
     # Calculate steps...
     north_west_enu = lla_to_model((north, west, 0.0), origin, params)
     south_east_enu = lla_to_model((south, east, 0.0), origin, params)
@@ -364,9 +363,8 @@ def create_stl(
     if verbose:
         print("Triangulating surface...")
 
-
     # Another hack: We build the surface and the base separately. The base
-    # alone uses Constructive Solid Geometry (CSG). The CSG module in ezdxf is using 
+    # alone uses Constructive Solid Geometry (CSG). The CSG module in ezdxf is using
     # a binary space partitioning (BSP) tree. This shatters triangles into lots of
     # sub-triangles. So if we tried using CSG on our landscape surface that has 100s of
     # thousands of initial triangles we end up with millions.
@@ -524,20 +522,6 @@ def triangulate_surface(
     ycoords = np.linspace(west_south_bot[1], east_south_bot[1], steps)
     for x in range(steps - 1):
         y = 0
-        # Sloped edge
-        # tri = (
-        #     surface[x, y],
-        #     (xcoords[x], ycoords[x], bot_height),
-        #     (xcoords[x + 1], ycoords[x + 1], bot_height),
-        # )
-
-        # model.add_face(tri)
-        # tri = (
-        #     surface[x, y],
-        #     (xcoords[x + 1], ycoords[x + 1], bot_height),
-        #     surface[x + 1, y],
-        # )
-        # model.add_face(tri)
 
         tri = (
             surface[x, y],
@@ -559,18 +543,6 @@ def triangulate_surface(
 
     for x in range(steps - 1):
         y = -1
-        #     tri = (
-        #         surface[x, y],
-        #         (xcoords[x], ycoords[x], bot_height),
-        #         (xcoords[x + 1], ycoords[x + 1], bot_height),
-        #     )
-        #     model.add_face(tri)
-        #     tri = (
-        #         surface[x, y],
-        #         (xcoords[x + 1], ycoords[x + 1], bot_height),
-        #         surface[x + 1, y],
-        #     )
-        #     model.add_face(tri)
 
         tri = (
             surface[x, y],
@@ -922,112 +894,6 @@ def triangle_normal(A: ArrayLike, B: ArrayLike, C: ArrayLike) -> np.ndarray:
     return normal_normalized
 
 
-# FIXME: No longer needed, remove
-def lla_to_ecef(lat_lon_alt: LLA) -> ECEF:
-    """
-    Convert latitude, longitude, altitude (LLA) coordinates
-    to Earth-Centered, Earth-Fixed (ECEF) Cartesian coordinates.
-    """
-    latitude, longitude, altitude = lat_lon_alt
-
-    # Constants for WGS84
-    a = 6378137.0  # Equatorial radius (meters)
-    e = 0.08181919084  # Eccentricity
-
-    # Convert latitude and longitude to radians
-    lat_rad = math.radians(latitude)
-    lon_rad = math.radians(longitude)
-
-    # Calculate prime vertical radius of curvature
-    N = a / math.sqrt(1 - e**2 * math.sin(lat_rad) ** 2)
-
-    # Calculate ECEF coordinates
-    X = (N + altitude) * math.cos(lat_rad) * math.cos(lon_rad)
-    Y = (N + altitude) * math.cos(lat_rad) * math.sin(lon_rad)
-    Z = ((1 - e**2) * N + altitude) * math.sin(lat_rad)
-
-    return X, Y, Z
-
-# FIXME: No longer needed, remove
-def ecef_to_lla(ecef: ECEF) -> LLA:
-    """
-    Convert to Earth-Centered, Earth-Fixed (ECEF) Cartesian coordinates
-    to latitude, longitude, altitude (LLA) coordinates.
-    """
-
-    x, y, z = ecef
-
-    # Constants for WGS84
-    a = 6378137.0  # Semi-major axis
-    e_sq = 0.00669437999014  # Square of eccentricity
-
-    # Calculate longitude
-    lon = math.atan2(y, x)
-
-    # Iterative calculation of latitude and altitude
-    p = math.sqrt(x**2 + y**2)
-    lat = math.atan2(z, p * (1.0 - e_sq))
-
-    while True:
-        N = a / math.sqrt(1 - e_sq * math.sin(lat) ** 2)
-        alt = p / math.cos(lat) - N
-        new_lat = math.atan2(z, p * (1.0 - e_sq * N / (N + alt)))
-
-        if abs(new_lat - lat) < 1e-9:
-            lat = new_lat
-            break
-
-        lat = new_lat
-
-    # Convert from radians to degrees
-    lon_deg = math.degrees(lon)
-    lat_deg = math.degrees(lat)
-
-    return lat_deg, lon_deg, alt
-
-
-# FIXME: No longer needed, remove?
-def lla_to_enu(lat_lon_alt: LLA, origin_lat_lon_alt: LLA) -> ENU:
-    """
-    Convert latitude, longitude, altitude (LLA) coordinates
-    to local Cartesian coordinates (East-North-Up or ENU) relative
-    to a given origin point. In millimeters
-    """
-    # Convert origin to ECEF coordinates
-    x_target, y_target, z_target = lla_to_ecef(lat_lon_alt)
-    x_origin, y_origin, z_origin = lla_to_ecef(origin_lat_lon_alt)
-
-    # Calculate ECEF vector between origin and target point
-    dx, dy, dz = x_target - x_origin, y_target - y_origin, z_target - z_origin
-
-    # Convert origin latitude and longitude to radians
-    lat_rad = math.radians(origin_lat_lon_alt[0])
-    lon_rad = math.radians(origin_lat_lon_alt[1])
-
-    # Define the rotation matrix
-    R = np.array(
-        [
-            [-math.sin(lon_rad), math.cos(lon_rad), 0],
-            [
-                -math.sin(lat_rad) * math.cos(lon_rad),
-                -math.sin(lat_rad) * math.sin(lon_rad),
-                math.cos(lat_rad),
-            ],
-            [
-                math.cos(lat_rad) * math.cos(lon_rad),
-                math.cos(lat_rad) * math.sin(lon_rad),
-                math.sin(lat_rad),
-            ],
-        ]
-    )
-
-    # Multiply the rotation matrix by the ECEF vector
-    enu = R.dot(np.array([dx, dy, dz]))
-    enu *= 1000  # meters to mm
-
-    return enu[0], enu[1], enu[2]
-
-
 def lla_to_model(
     lat_lon_alt: LLA, origin_lat_lon_alt: LLA, params: STLParameters
 ) -> ENU:
@@ -1036,17 +902,6 @@ def lla_to_model(
     to model ENU Cartesian coordinates in millimeters
     """
 
-    # if params.projection == "none":
-    #     # Probably broken at this point. Do not use.
-    #     assert False
-    #     lat, lon, alt = lat_lon_alt
-    #     enu = lla_to_enu((lat, lon, alt * params.exaggeration), origin_lat_lon_alt)
-    #     enu_scaled = np.asarray(enu)
-    #     enu_scaled /= params.scale
-
-    #     return (enu_scaled[0], enu_scaled[1], enu_scaled[2])
-
-    # elif params.projection == "lambert_conformal_conic":
     lat, lon, alt = lat_lon_alt
     origin_lat, origin_lon, origin_alt = origin_lat_lon_alt
 
@@ -1078,7 +933,6 @@ def angle_between(v: np.ndarray, w: np.ndarray) -> np.ndarray:
     return np.arccos(np.dot(v, w) / (np.linalg.norm(v) * np.linalg.norm(w)))
 
 
-# FIXME: Probably no longer needed, remove?
 def corners_to_model(
     boundary: BBox,
     alt: Meters,
