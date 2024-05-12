@@ -180,18 +180,18 @@ def main() -> int:
         "--exaggeration",
         dest="exaggeration",
         type=float,
-        default=1.0,
+        # default=1.0,
         help="Vertical exaggeration",
     )
 
-    parser.add_argument(
-        "--resolution",
-        dest="resolution",
-        default=default_params.resolution,
-        choices=default_params.resolution_choices,
-        type=int,
-        help="DEM resolution",
-    )
+    # parser.add_argument(
+    #     "--resolution",
+    #     dest="resolution",
+    #     default=default_params.resolution,
+    #     choices=default_params.resolution_choices,
+    #     type=int,
+    #     help="DEM resolution",
+    # )
 
     parser.add_argument(
         "--magnets", dest="magnets", type=float, help="Magnet spacing (in degrees)"
@@ -237,9 +237,10 @@ def main() -> int:
         scale=args["scale"],
         exaggeration=args["exaggeration"],
         magnet_spacing=args["magnets"],
-        resolution=args["resolution"],
+        # resolution=args["resolution"],
         # projection=args["projection"],
     )
+
 
     create_stl(
         params, args["coordinates"], filename=args["name"], verbose=args["verbose"]
@@ -300,7 +301,7 @@ def quad_from_coordinates(lat, long):
     )
 
     row = df[condition]
-    print(len(row))
+    # print(len(row))
     if len(row) == 0:
         return (None, None)
     name = row["map_name"].astype(str).iloc[0]
@@ -331,6 +332,9 @@ def create_stl(
     # Locate origin
     south, west, north, east = boundary
     origin = locate_origin(boundary)
+
+    if verbose:
+        print(params)
 
     # Calculate steps...
     north_west_enu = lla_to_model((north, west, 0.0), origin, params)
