@@ -18,7 +18,7 @@ Yosemite was printed in 30 segments, held together by magnets installed along th
 The python script landscape2stl.py generates large scale terrain models as STL files suitable for 3D printing. I have
 incorporated a number of innovations, notably a high resolution data source and base alignment magnets.
 
-Install dependencies,
+Requires python 3.10 or newer. Install dependencies,
 
     > pip install -r requirements.txt
 
