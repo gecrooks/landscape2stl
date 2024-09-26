@@ -58,23 +58,10 @@ BBox: TypeAlias = tuple[
 ]  # Geographic bounding box: south, west, north, east
 
 
-# Various presets featuring varied terrains for testing and development.
-presets: dict[str, tuple[BBox, int]] = {
-    # "half_dome": ((37.72, -119.57, 37.76, -119.52), 24_000), # 37.75°N 119.53°W
-    "half_dome": ((37.72, -119.57, 37.77, -119.51), 24_000),  # 37.75°N 119.53°W
-    "west_of_half_dome": ((37.72, -119.62, 37.76, -119.57), 24_000),
-    "whitney": ((36.56, -118.33, 36.60, -118.28), 24_000),  # High point test
-    "grand_canyon": ((36.0000, -112.2000, 36.2000, -111.9500), 125_000),
-    "shasta": ((41.3000, -122.3500, 41.5000, -122.0500), 125_000),
-    "shasta_west": ((41.3000, -122.6500, 41.5000, -122.3500), 125_000),
-    "joshua_tree": ((33.8, -116.0000, 34.0000, -115.75), 125_000),
-    "owens_valley": ((36.5, -120, 38, -118), 1_000_000),
-    "denali": ((62.5000, -152.0000, 63.5000, -150.0000), 1_000_000),
-}
-
 
 # standard_scales = [
-#     24_000,  # 1" = 2000', about 2.5" to 1 mile
+#     15_625,  # about 4" to 1 mile
+#     31_250,  # about 2" to 1 mile
 #     62_500,  # about 1" to 1 mile
 #     125_000,  # about 1" to 2 miles
 #     250_000,  # about 1" to 4 miles
@@ -129,10 +116,7 @@ class STLParameters:
 
     def __post_init__(self):
         if not self.magnet_spacing:
-            if self.scale == 24_000:
-                self.magnet_spacing = 1 / 64
-            else:
-                self.magnet_spacing = self.scale / 2_000_000
+            self.magnet_spacing = self.scale / 2_000_000
 
         if not self.resolution:
             if self.scale < 250_000:
@@ -168,8 +152,6 @@ def main() -> int:
         help="Latitude/longitude coordinates for quadrangle (Order south edge, west edge, north edge, east edge)",
     )
 
-    parser.add_argument("--preset", dest="preset", choices=presets.keys())
-
     parser.add_argument("--quad", dest="quad", type=str)
 
     parser.add_argument("--state", dest="state", type=str, default="CA")
@@ -203,19 +185,6 @@ def main() -> int:
 
     args = vars(parser.parse_args())
     name = None
-
-    if args["preset"] is not None:
-        if args["coordinates"]:
-            parser.print_help()
-            return 1
-
-        name = args["preset"]
-        args["coordinates"] = presets[name][0]
-        if args["scale"] is None:
-            args["scale"] = presets[name][1]
-
-        if args["name"] is None:
-            args["name"] = args["preset"]
 
     if args["quad"] is not None:
         name = args["quad"].lower().replace(" ", "_")

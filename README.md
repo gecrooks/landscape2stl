@@ -24,7 +24,7 @@ Requires python 3.10 or newer. Install dependencies,
 
 then create STL terrain models.
 
-    > python -m landscape2stl --preset half_dome
+    > python -m landscape2stl --quad half_dome
 
 
 ## Data Source: 3DEP 1/3rd arc-second
@@ -52,7 +52,7 @@ I've also added smaller holes along the sides for alignment pins (Use metal pins
 > python -m landscape2stl --help
 
 usage: landscape2stl.py [-h] 
-                        [--preset {half_dome,west_of_half_dome,whitney,grand_canyon,shasta,shasta_west,joshua_tree,owens_valley,denali}] [--quad QUAD]
+                        [--quad QUAD]
                         [--state STATE]
                         [--scale SCALE]
                         [--exaggeration EXAGGERATION]
@@ -68,7 +68,6 @@ positional arguments:
 
 options:
   -h, --help            show this help message and exit
-  --preset {half_dome,west_of_half_dome,whitney,grand_canyon,shasta,shasta_west,joshua_tree,owens_valley,denali}
   --quad QUAD
   --state STATE
   --scale SCALE         Map scale
