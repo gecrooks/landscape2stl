@@ -101,8 +101,7 @@ class STLParameters:
 
     drop_sea_level: bool = True
     sea_level: Meters = 1.7
-    sea_level_drop: MM = 0.24  # 3 layers
-
+    sea_level_drop: MM = 0.48  # 6 layers
     exaggeration: float = 0.0  # Auto set in __post_init__
 
     base_height: MM = 10.0
@@ -121,12 +120,12 @@ class STLParameters:
     pin_padding: MM = 0.05 * 3
     pin_sides: int = 8
 
-    bolt_holes: bool = False
-    bolt_hole_offset: MM = 10
-    bolt_hole_diameter: MM = 5.6
-    bolt_hole_padding: MM = 0.2
-    bolt_hole_depth: MM = 9.1
-    bolt_hole_sides: int = 24
+    bottom_holes: bool = False
+    bottom_hole_offset: MM = 10
+    bottom_hole_diameter: MM = 5.6
+    bottom_hole_padding: MM = 0.2
+    bottom_hole_depth: MM = 9.1
+    bottom_hole_sides: int = 24
 
     def __post_init__(self):
         if not self.magnet_spacing:
@@ -301,7 +300,6 @@ def quad_from_coordinates(lat, long):
     )
 
     row = df[condition]
-    # print(len(row))
     if len(row) == 0:
         return (None, None)
     name = row["map_name"].astype(str).iloc[0]
@@ -454,6 +452,8 @@ def elevation_to_surface(
     steps = len(ycoords)
     elevation_array = np.asarray(elevation.to_array()).reshape((steps, steps)).T
 
+    # print("Elevation min max", np.min(elevation_array), np.max(elevation_array))
+
     # Missing date will be nan
     elevation_array = np.nan_to_num(elevation_array, nan=0.0)
 
@@ -463,16 +463,24 @@ def elevation_to_surface(
         dropped_sea_level = (
             -(params.scale * params.sea_level_drop / 1000) / params.exaggeration
         )
-        sea = np.abs(elevation_array) <= params.sea_level
-        kernel = np.ones((3, 3), dtype=np.int8)
-        kernel[1, 1] = 0
-        N = signal.convolve(sea, kernel, mode="same")
-        T = signal.convolve(np.ones_like(elevation_array), kernel, mode="same")
+        # print("dropped_sea_level", dropped_sea_level)
         elevation_array = np.where(
             np.abs(elevation_array) <= params.sea_level,
-            dropped_sea_level * (N / T),
+            dropped_sea_level,
             elevation_array,
         )
+
+        # # More complicated algorithm that smooths shoreline. Not needed.
+        # sea = np.abs(elevation_array) <= params.sea_level
+        # kernel = np.ones((3, 3), dtype=np.int8)
+        # kernel[1, 1] = 0
+        # N = signal.convolve(sea, kernel, mode="same")
+        # T = signal.convolve(np.ones_like(elevation_array), kernel, mode="same")
+        # elevation_array = np.where(
+        #     np.abs(elevation_array) <= params.sea_level,
+        #     dropped_sea_level * (N / T),
+        #     elevation_array,
+        # )
 
     surface = np.zeros(shape=(steps, steps, 3))
 
@@ -817,12 +825,12 @@ def triangulate_base(
             hole = make_hole(pin_sides, pin_length, pin_radius, pin_enu, east_normal)
             model_csg = model_csg - CSG(hole)
 
-    if params.bolt_holes:
-        # Corner bolt holes
-        offset = params.bolt_hole_offset
-        sides = params.bolt_hole_sides
-        radius = params.bolt_hole_padding + params.bolt_hole_diameter / 2
-        depth = params.bolt_hole_depth
+    if params.bottom_holes:
+        # Corner bottom holes
+        offset = params.bottom_hole_offset
+        sides = params.bottom_hole_sides
+        radius = params.bottom_hole_padding + params.bottom_hole_diameter / 2
+        depth = params.bottom_hole_depth
         cylinder = cylinder_2p(
             count=sides,
             base_center=(0, 0, -depth),
