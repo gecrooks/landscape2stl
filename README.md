@@ -133,6 +133,10 @@ After printing, use a deburring tool to clean up bottom edges, lightly sand the 
 To fit the magnets, take a stack of magnets, place over the magnet hole (in the correct orientation), and give the top of the stack a few lights taps with a mallet. If the magnet won't stay in its socket, add a small spot of superglue.
 
 
+## Affixing to wall
+Lighter tiles can be affixed to a wall using four Velcro 3/4" circles (one in each corner). Velcro has the advantages that tiles can bre removed and re-positioned, and there is little give hat allow the magnets to pull neighboring tiles into alignment.  However heavier tiles (62_500 scale for example) require a more robust adhesive. Large 3M Command strips work well, although getting tiles aligned is more tricky.
+
+
 ## Known Issues
 
 ### Experimental Prototype
