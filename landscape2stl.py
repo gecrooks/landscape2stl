@@ -58,23 +58,10 @@ BBox: TypeAlias = tuple[
 ]  # Geographic bounding box: south, west, north, east
 
 
-# Various presets featuring varied terrains for testing and development.
-presets: dict[str, tuple[BBox, int]] = {
-    # "half_dome": ((37.72, -119.57, 37.76, -119.52), 24_000), # 37.75°N 119.53°W
-    "half_dome": ((37.72, -119.57, 37.77, -119.51), 24_000),  # 37.75°N 119.53°W
-    "west_of_half_dome": ((37.72, -119.62, 37.76, -119.57), 24_000),
-    "whitney": ((36.56, -118.33, 36.60, -118.28), 24_000),  # High point test
-    "grand_canyon": ((36.0000, -112.2000, 36.2000, -111.9500), 125_000),
-    "shasta": ((41.3000, -122.3500, 41.5000, -122.0500), 125_000),
-    "shasta_west": ((41.3000, -122.6500, 41.5000, -122.3500), 125_000),
-    "joshua_tree": ((33.8, -116.0000, 34.0000, -115.75), 125_000),
-    "owens_valley": ((36.5, -120, 38, -118), 1_000_000),
-    "denali": ((62.5000, -152.0000, 63.5000, -150.0000), 1_000_000),
-}
-
 
 # standard_scales = [
-#     24_000,  # 1" = 2000', about 2.5" to 1 mile
+#     15_625,  # about 4" to 1 mile
+#     31_250,  # about 2" to 1 mile
 #     62_500,  # about 1" to 1 mile
 #     125_000,  # about 1" to 2 miles
 #     250_000,  # about 1" to 4 miles
@@ -101,9 +88,8 @@ class STLParameters:
 
     drop_sea_level: bool = True
     sea_level: Meters = 1.7
-    sea_level_drop: MM = 0.24  # 3 layers
-
-    exaggeration: float = 0.0 # Auto set in __post_init__
+    sea_level_drop: MM = 0.48  # 6 layers
+    exaggeration: float = 0.0  # Auto set in __post_init__
 
     base_height: MM = 10.0
 
@@ -121,19 +107,16 @@ class STLParameters:
     pin_padding: MM = 0.05 * 3
     pin_sides: int = 8
 
-    bolt_holes: bool = False
-    bolt_hole_offset: MM = 10
-    bolt_hole_diameter: MM = 5.6
-    bolt_hole_padding: MM = 0.2
-    bolt_hole_depth: MM = 9.1
-    bolt_hole_sides: int = 24
+    bottom_holes: bool = False
+    bottom_hole_offset: MM = 10
+    bottom_hole_diameter: MM = 5.6
+    bottom_hole_padding: MM = 0.2
+    bottom_hole_depth: MM = 9.1
+    bottom_hole_sides: int = 24
 
     def __post_init__(self):
         if not self.magnet_spacing:
-            if self.scale == 24_000:
-                self.magnet_spacing = 1/64
-            else:
-                self.magnet_spacing = self.scale / 2_000_000
+            self.magnet_spacing = self.scale / 2_000_000
 
         if not self.resolution:
             if self.scale < 250_000:
@@ -152,7 +135,8 @@ class STLParameters:
             if self.scale <= 62_500:
                 self.exaggeration = 1.0
             else:
-                self.exaggeration = 3 - 0.5 * math.log2(1_000_000/self.scale)
+                self.exaggeration = 3 - 0.5 * math.log2(1_000_000 / self.scale)
+
 
 # end STLParameters
 
@@ -168,8 +152,6 @@ def main() -> int:
         help="Latitude/longitude coordinates for quadrangle (Order south edge, west edge, north edge, east edge)",
     )
 
-    parser.add_argument("--preset", dest="preset", choices=presets.keys())
-
     parser.add_argument("--quad", dest="quad", type=str)
 
     parser.add_argument("--state", dest="state", type=str, default="CA")
@@ -180,18 +162,18 @@ def main() -> int:
         "--exaggeration",
         dest="exaggeration",
         type=float,
-        default=1.0,
+        # default=1.0,
         help="Vertical exaggeration",
     )
 
-    parser.add_argument(
-        "--resolution",
-        dest="resolution",
-        default=default_params.resolution,
-        choices=default_params.resolution_choices,
-        type=int,
-        help="DEM resolution",
-    )
+    # parser.add_argument(
+    #     "--resolution",
+    #     dest="resolution",
+    #     default=default_params.resolution,
+    #     choices=default_params.resolution_choices,
+    #     type=int,
+    #     help="DEM resolution",
+    # )
 
     parser.add_argument(
         "--magnets", dest="magnets", type=float, help="Magnet spacing (in degrees)"
@@ -203,19 +185,6 @@ def main() -> int:
 
     args = vars(parser.parse_args())
     name = None
-
-    if args["preset"] is not None:
-        if args["coordinates"]:
-            parser.print_help()
-            return 1
-
-        name = args["preset"]
-        args["coordinates"] = presets[name][0]
-        if args["scale"] is None:
-            args["scale"] = presets[name][1]
-
-        if args["name"] is None:
-            args["name"] = args["preset"]
 
     if args["quad"] is not None:
         name = args["quad"].lower().replace(" ", "_")
@@ -237,7 +206,7 @@ def main() -> int:
         scale=args["scale"],
         exaggeration=args["exaggeration"],
         magnet_spacing=args["magnets"],
-        resolution=args["resolution"],
+        # resolution=args["resolution"],
         # projection=args["projection"],
     )
 
@@ -300,7 +269,6 @@ def quad_from_coordinates(lat, long):
     )
 
     row = df[condition]
-    print(len(row))
     if len(row) == 0:
         return (None, None)
     name = row["map_name"].astype(str).iloc[0]
@@ -328,9 +296,12 @@ def create_stl(
     filename: Optional[str] = None,
     verbose: bool = False,
 ) -> None:
+    if verbose:
+        print(params)
+
     # Locate origin
     south, west, north, east = boundary
-    origin = locate_origin(boundary)
+    origin = (south + north) / 2, (east + west) / 2, 0.0
 
     # Calculate steps...
     north_west_enu = lla_to_model((north, west, 0.0), origin, params)
@@ -359,12 +330,11 @@ def create_stl(
     if verbose:
         print("Triangulating surface...")
 
-
     # Another hack: We build the surface and the base separately. The base
-    # alone uses Constructive Solid Geometry (CSG). The CSG module in ezdxf is using 
+    # alone uses Constructive Solid Geometry (CSG). The CSG module in ezdxf is using
     # a binary space partitioning (BSP) tree. This shatters triangles into lots of
-    # sub-triangles. So if we tried using CSG on our landscape surface that the 100s of
-    # thousands of initial triangles ends up as millions.
+    # sub-triangles. So if we tried using CSG on our landscape surface that has 100s of
+    # thousands of initial triangles we end up with millions.
 
     # Also even with small models ezdxf generates non-manifold meshes that can upset the slicer.
     # Errors seem to be reparable or ignorable (mostly).
@@ -403,35 +373,6 @@ def create_stl(
 
 
 # end create_stl
-
-
-# FIXME: Still needed with current projection?
-def locate_origin(boundary: BBox) -> LLA:
-    # Locate a point in the middle of the landscape tile which defines the
-    # local up direction. Model distances are defined relative to this point
-
-    south, west, north, east = boundary
-
-    origin = (south + north) / 2, (east + west) / 2, -100000.0
-
-    # adjust origin so that 4 corners are equal height
-
-    alt = -100
-    west_north = lla_to_ecef((north, west, alt))
-    east_north = lla_to_ecef((north, east, alt))
-    east_south = lla_to_ecef((south, east, alt))
-    west_south = lla_to_ecef((south, west, alt))
-    new_origin_ecef = (
-        (west_north[0] + east_south[0] + west_south[0] + east_north[0]) / 4,
-        (west_north[1] + east_south[1] + west_south[1] + east_north[1]) / 4,
-        (west_north[2] + east_south[2] + west_south[2] + east_north[2]) / 4,
-    )
-    new_origin = ecef_to_lla(new_origin_ecef)
-
-    # Honestly, dunno why this works.
-    origin = (origin[0] * 2 - new_origin[0], new_origin[1], 0.0)
-
-    return origin
 
 
 def download_elevation(
@@ -480,6 +421,8 @@ def elevation_to_surface(
     steps = len(ycoords)
     elevation_array = np.asarray(elevation.to_array()).reshape((steps, steps)).T
 
+    # print("Elevation min max", np.min(elevation_array), np.max(elevation_array))
+
     # Missing date will be nan
     elevation_array = np.nan_to_num(elevation_array, nan=0.0)
 
@@ -489,16 +432,24 @@ def elevation_to_surface(
         dropped_sea_level = (
             -(params.scale * params.sea_level_drop / 1000) / params.exaggeration
         )
-        sea = np.abs(elevation_array) <= params.sea_level
-        kernel = np.ones((3, 3), dtype=np.int8)
-        kernel[1, 1] = 0
-        N = signal.convolve(sea, kernel, mode="same")
-        T = signal.convolve(np.ones_like(elevation_array), kernel, mode="same")
+        # print("dropped_sea_level", dropped_sea_level)
         elevation_array = np.where(
             np.abs(elevation_array) <= params.sea_level,
-            dropped_sea_level * (N / T),
+            dropped_sea_level,
             elevation_array,
         )
+
+        # # More complicated algorithm that smooths shoreline. Not needed.
+        # sea = np.abs(elevation_array) <= params.sea_level
+        # kernel = np.ones((3, 3), dtype=np.int8)
+        # kernel[1, 1] = 0
+        # N = signal.convolve(sea, kernel, mode="same")
+        # T = signal.convolve(np.ones_like(elevation_array), kernel, mode="same")
+        # elevation_array = np.where(
+        #     np.abs(elevation_array) <= params.sea_level,
+        #     dropped_sea_level * (N / T),
+        #     elevation_array,
+        # )
 
     surface = np.zeros(shape=(steps, steps, 3))
 
@@ -548,20 +499,6 @@ def triangulate_surface(
     ycoords = np.linspace(west_south_bot[1], east_south_bot[1], steps)
     for x in range(steps - 1):
         y = 0
-        # Sloped edge
-        # tri = (
-        #     surface[x, y],
-        #     (xcoords[x], ycoords[x], bot_height),
-        #     (xcoords[x + 1], ycoords[x + 1], bot_height),
-        # )
-
-        # model.add_face(tri)
-        # tri = (
-        #     surface[x, y],
-        #     (xcoords[x + 1], ycoords[x + 1], bot_height),
-        #     surface[x + 1, y],
-        # )
-        # model.add_face(tri)
 
         tri = (
             surface[x, y],
@@ -583,18 +520,6 @@ def triangulate_surface(
 
     for x in range(steps - 1):
         y = -1
-        #     tri = (
-        #         surface[x, y],
-        #         (xcoords[x], ycoords[x], bot_height),
-        #         (xcoords[x + 1], ycoords[x + 1], bot_height),
-        #     )
-        #     model.add_face(tri)
-        #     tri = (
-        #         surface[x, y],
-        #         (xcoords[x + 1], ycoords[x + 1], bot_height),
-        #         surface[x + 1, y],
-        #     )
-        #     model.add_face(tri)
 
         tri = (
             surface[x, y],
@@ -869,12 +794,12 @@ def triangulate_base(
             hole = make_hole(pin_sides, pin_length, pin_radius, pin_enu, east_normal)
             model_csg = model_csg - CSG(hole)
 
-    if params.bolt_holes:
-        # Corner bolt holes
-        offset = params.bolt_hole_offset
-        sides = params.bolt_hole_sides
-        radius = params.bolt_hole_padding + params.bolt_hole_diameter / 2
-        depth = params.bolt_hole_depth
+    if params.bottom_holes:
+        # Corner bottom holes
+        offset = params.bottom_hole_offset
+        sides = params.bottom_hole_sides
+        radius = params.bottom_hole_padding + params.bottom_hole_diameter / 2
+        depth = params.bottom_hole_depth
         cylinder = cylinder_2p(
             count=sides,
             base_center=(0, 0, -depth),
@@ -946,112 +871,6 @@ def triangle_normal(A: ArrayLike, B: ArrayLike, C: ArrayLike) -> np.ndarray:
     return normal_normalized
 
 
-# FIXME: No longer needed, remove
-def lla_to_ecef(lat_lon_alt: LLA) -> ECEF:
-    """
-    Convert latitude, longitude, altitude (LLA) coordinates
-    to Earth-Centered, Earth-Fixed (ECEF) Cartesian coordinates.
-    """
-    latitude, longitude, altitude = lat_lon_alt
-
-    # Constants for WGS84
-    a = 6378137.0  # Equatorial radius (meters)
-    e = 0.08181919084  # Eccentricity
-
-    # Convert latitude and longitude to radians
-    lat_rad = math.radians(latitude)
-    lon_rad = math.radians(longitude)
-
-    # Calculate prime vertical radius of curvature
-    N = a / math.sqrt(1 - e**2 * math.sin(lat_rad) ** 2)
-
-    # Calculate ECEF coordinates
-    X = (N + altitude) * math.cos(lat_rad) * math.cos(lon_rad)
-    Y = (N + altitude) * math.cos(lat_rad) * math.sin(lon_rad)
-    Z = ((1 - e**2) * N + altitude) * math.sin(lat_rad)
-
-    return X, Y, Z
-
-# FIXME: No longer needed, remove
-def ecef_to_lla(ecef: ECEF) -> LLA:
-    """
-    Convert to Earth-Centered, Earth-Fixed (ECEF) Cartesian coordinates
-    to latitude, longitude, altitude (LLA) coordinates.
-    """
-
-    x, y, z = ecef
-
-    # Constants for WGS84
-    a = 6378137.0  # Semi-major axis
-    e_sq = 0.00669437999014  # Square of eccentricity
-
-    # Calculate longitude
-    lon = math.atan2(y, x)
-
-    # Iterative calculation of latitude and altitude
-    p = math.sqrt(x**2 + y**2)
-    lat = math.atan2(z, p * (1.0 - e_sq))
-
-    while True:
-        N = a / math.sqrt(1 - e_sq * math.sin(lat) ** 2)
-        alt = p / math.cos(lat) - N
-        new_lat = math.atan2(z, p * (1.0 - e_sq * N / (N + alt)))
-
-        if abs(new_lat - lat) < 1e-9:
-            lat = new_lat
-            break
-
-        lat = new_lat
-
-    # Convert from radians to degrees
-    lon_deg = math.degrees(lon)
-    lat_deg = math.degrees(lat)
-
-    return lat_deg, lon_deg, alt
-
-
-# FIXME: No longer needed, remove?
-def lla_to_enu(lat_lon_alt: LLA, origin_lat_lon_alt: LLA) -> ENU:
-    """
-    Convert latitude, longitude, altitude (LLA) coordinates
-    to local Cartesian coordinates (East-North-Up or ENU) relative
-    to a given origin point. In millimeters
-    """
-    # Convert origin to ECEF coordinates
-    x_target, y_target, z_target = lla_to_ecef(lat_lon_alt)
-    x_origin, y_origin, z_origin = lla_to_ecef(origin_lat_lon_alt)
-
-    # Calculate ECEF vector between origin and target point
-    dx, dy, dz = x_target - x_origin, y_target - y_origin, z_target - z_origin
-
-    # Convert origin latitude and longitude to radians
-    lat_rad = math.radians(origin_lat_lon_alt[0])
-    lon_rad = math.radians(origin_lat_lon_alt[1])
-
-    # Define the rotation matrix
-    R = np.array(
-        [
-            [-math.sin(lon_rad), math.cos(lon_rad), 0],
-            [
-                -math.sin(lat_rad) * math.cos(lon_rad),
-                -math.sin(lat_rad) * math.sin(lon_rad),
-                math.cos(lat_rad),
-            ],
-            [
-                math.cos(lat_rad) * math.cos(lon_rad),
-                math.cos(lat_rad) * math.sin(lon_rad),
-                math.sin(lat_rad),
-            ],
-        ]
-    )
-
-    # Multiply the rotation matrix by the ECEF vector
-    enu = R.dot(np.array([dx, dy, dz]))
-    enu *= 1000  # meters to mm
-
-    return enu[0], enu[1], enu[2]
-
-
 def lla_to_model(
     lat_lon_alt: LLA, origin_lat_lon_alt: LLA, params: STLParameters
 ) -> ENU:
@@ -1060,17 +879,6 @@ def lla_to_model(
     to model ENU Cartesian coordinates in millimeters
     """
 
-    # if params.projection == "none":
-    #     # Probably broken at this point. Do not use.
-    #     assert False
-    #     lat, lon, alt = lat_lon_alt
-    #     enu = lla_to_enu((lat, lon, alt * params.exaggeration), origin_lat_lon_alt)
-    #     enu_scaled = np.asarray(enu)
-    #     enu_scaled /= params.scale
-
-    #     return (enu_scaled[0], enu_scaled[1], enu_scaled[2])
-
-    # elif params.projection == "lambert_conformal_conic":
     lat, lon, alt = lat_lon_alt
     origin_lat, origin_lon, origin_alt = origin_lat_lon_alt
 
@@ -1102,7 +910,6 @@ def angle_between(v: np.ndarray, w: np.ndarray) -> np.ndarray:
     return np.arccos(np.dot(v, w) / (np.linalg.norm(v) * np.linalg.norm(w)))
 
 
-# FIXME: Probably no longer needed, remove?
 def corners_to_model(
     boundary: BBox,
     alt: Meters,
