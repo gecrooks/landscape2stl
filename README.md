@@ -29,9 +29,9 @@ then create STL terrain models.
 
 ## Data Source: 3DEP 1/3rd arc-second
 
-The elevation data is taken from the USGS 3D Elevation Program (3DEP) 1/3rd arc-second dataset (approximately 10m resolution). This
-is a high quality, high resolution dataset. I've experimented printing with scales up to 1:24000, and the models look great. (If the 
-dataset resolution isn't fine enough the model starts looking like Minecraft.)
+The elevation data is taken from the USGS 3D Elevation Program (3DEP) 1/3rd arc-second dataset (approximately 10 meter resolution). This
+is a high quality, high resolution dataset. I've experimented printing with scales up to 1:15,625 (About 1" to 4 miles), and the models 
+look great. (If the dataset resolution isn't fine enough the model starts looking like Minecraft.)
 
 The downside is that this dataset is only available for the contiguous 48 states, Hawaii, and some parts of Alaska.
 
@@ -80,10 +80,9 @@ options:
   -v, --verbose
 ```
 
-###  S W N E               
+###  S W N E
 
 Latitude/longitude coordinates for slab (Order south edge, west edge, north edge, east edge)
-
 
 
 ### Preset
@@ -97,15 +96,14 @@ One resource to find the name of quadrangle maps is https://livingatlas.arcgis.c
 (Select 1:24_000 scale for 7.5 minute maps.)
 
 ### Scale
-Common scales for US maps include:
+At a scale of 1:1_000_000 we can fit a 2° x 2° tile of a standard 256mm x 256mm print bed. Each tile is about 220mm by 175mm  (Exact size varies a little due to the projection). From that scale we zoom in, reducing the latitude and longitude spanned appropriately. Good scales for tiles are the following.
 
 * 1:1_000_000       Approx 1 inch: 16 miles       2° x 2°             144 x 112 miles
-* 1:250_000         Approx 1 inch: 4 miles        1/2° x 1/2°         
+* 1:250_000         Approx 1 inch: 4 miles        1/2° x 1/2°         36 x 28 miles
 * 1:62_500          Approx 1 inch: 1 mile         1/8° x 1/8°         9 x 7 miles
-* 1:24_000          1" = 2000', about 2.5" to 1 mile  
 * 1:15_625          Approx 4 inches: 1 mile       1/32° x 1/32°       2 1/4 x 1 3/4 miles
 
-Also listed are the approximate scale in inches per mile, the latitude and longitude extend of the quadrangle that will fit on a 256mm x 256mm print bed, and the approximate scaled size in miles. 
+Here the scales zoom in by factors of 4, so 16 tiles of a smaller scale fit in one tile of the next bigger scale. Also listed are the approximate scale in inches per mile, the latitude and longitude extend of the quadrangle that will fit on a 256mm x 256mm print bed, and the approximate scaled size in miles.
 
 
 ### Exaggeration
@@ -114,7 +112,7 @@ Low scale models require vertical exaggeration else the landscape looks flat and
 
 
 ### Magnet spacing
-The spacing between magnets in degrees. If you use a standard scale a reasonable magnet spacing will be chosen for you.
+The spacing between magnets in degrees. If you use a standard scale a reasonable magnet spacing will be chosen for you, with 4 magnets per side. Thus at e.g. a scale of 1:1_000_000 the spacing between magnets is 1/2°.
 
 
 
@@ -133,7 +131,7 @@ With a layer height of 0.08mm contour lines are approximately 15' apart at a sca
 
 After printing, use a deburring tool to clean up bottom edges, lightly sand the sides, and press-fit the magnets. Make sure the magnet orientations are consistent. I use the same orientation on North and East edges, and flip the orientation for the South and West edges. Make sure to use the same magnet orientations for each additional slab. 
 
-To fit the magnets, take a stack of magnets, place over the magnet hole (in the correct orientation), and give the top of the stack a few lights tap with a mallet. If the magnet won't stay in its socket, add a small spot of superglue. 
+To fit the magnets, take a stack of magnets, place over the magnet hole (in the correct orientation), and give the top of the stack a few lights taps with a mallet. If the magnet won't stay in its socket, add a small spot of superglue.
 
 
 ## Known Issues
@@ -143,9 +141,9 @@ To fit the magnets, take a stack of magnets, place over the magnet hole (in the 
 This is an experimental prototype package of beta code for my own amusement. There is no support. Use at your own risk. Caveat emptor.
 
 ### Non-manifold models
-The  generated models have bugs. The Bambu Labs slicer will complain about "Non-manifold edges". Often these errors can be ignored, but sometimes the slicer gets upset, and the model needs to be repaired (Unfortunately Bambu only provides the repair functionality on Windows, not on Mac OS) The Cura slicer is more forgiving. 
+The  generated models have bugs. The Bambu Labs slicer will complain about "Non-manifold edges". Often these errors can be ignored, but sometimes the slicer gets upset, and the model needs to be repaired (Unfortunately Bambu only provides the repair functionality on Windows, not on Mac OS) The Cura slicer is more forgiving.
 
-Some of these errors are being generated by hacks in my code that are there to get adequate performance out of the Computational Solid Geometry package in ezdxf, and some seem to be being generated by ezdxf itself.
+(Some of these errors are being generated by hacks in my code that are there to get adequate performance out of the Computational Solid Geometry package in ezdxf, and some seem to be being generated by ezdxf itself.)
 
 ### Limited data coverage
 
@@ -158,7 +156,5 @@ I'm using a Lambert conformal conic projection with standard parallels of 33 and
 ### Shorelines
 
 We drop ocean areas by a small amount to make shorelines more visible in the models. Unfortunately the 3DEP dataset does not make it clear where land ends and the sea begins. You might think that sea is at sea level, and everything above sea level is land, but that produces bad looking coast lines. Setting sea level to 1m  oddly produces better results, but not ideal. Also some areas of California, notable Death Valley, are below sea level. And the sea is not always at zero meters (no not obviously good reason). I've added some heuristics to generate shores lines, but they are under-tested. Use at your own risk.
-
-
 
 
