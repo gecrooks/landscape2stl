@@ -87,7 +87,7 @@ class STLParameters:
     min_altitude: Meters = -100.0  # Lowest point in US is -86 m
 
     drop_sea_level: bool = True
-    sea_level: Meters = 1.7
+    sea_level: Meters = 0.8 # was 1.7
     sea_level_drop: MM = 0.48  # 6 layers
     exaggeration: float = 0.0  # Auto set in __post_init__
 
@@ -421,25 +421,27 @@ def elevation_to_surface(
     steps = len(ycoords)
     elevation_array = np.asarray(elevation.to_array()).reshape((steps, steps)).T
 
-    # print("Elevation min max", np.min(elevation_array), np.max(elevation_array))
-
     # Missing date will be nan
     elevation_array = np.nan_to_num(elevation_array, nan=0.0)
 
     if params.drop_sea_level:
-        from scipy import signal
+
+        near_death_valley = np.outer((xcoords >= -118) & (xcoords <= -116), (ycoords <= 38)  & (ycoords >= 34))
+        near_salton_trough = np.outer((xcoords >= -116.5) & (xcoords <= -114), (ycoords <= 34)  & (ycoords >= 31.9))
+        exclude = (near_death_valley | near_salton_trough)
 
         dropped_sea_level = (
             -(params.scale * params.sea_level_drop / 1000) / params.exaggeration
         )
-        # print("dropped_sea_level", dropped_sea_level)
+
         elevation_array = np.where(
-            np.abs(elevation_array) <= params.sea_level,
+            ((elevation_array) <= params.sea_level) & ~exclude,
             dropped_sea_level,
             elevation_array,
         )
 
         # # More complicated algorithm that smooths shoreline. Not needed.
+        # from scipy import signal
         # sea = np.abs(elevation_array) <= params.sea_level
         # kernel = np.ones((3, 3), dtype=np.int8)
         # kernel[1, 1] = 0
